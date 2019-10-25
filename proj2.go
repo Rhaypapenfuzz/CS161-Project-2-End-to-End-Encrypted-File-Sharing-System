@@ -67,6 +67,26 @@ func someUsefulThings() {
         var sk userlib.PKEDecKey
 	pk, sk, _ = userlib.PKEKeyGen()
 	userlib.DebugMsg("Key is %v, %v", pk, sk)
+
+	
+/*
+********************************************
+**   		 My Own Notes				  **
+**        		 HKDF  	            	  **
+********************************************
+*/
+	//deriving a new Symmetric Key from Hash-based key derivation function (HKDF)
+	// In use this will be an actual old symmetric key
+	OldSymmetricKey := userlib.RandomBytes(16) 
+
+	newSymmetricKey, err := HKDF(OldSymmetricKey)
+	if err != nil{
+		//return nil, err
+	}
+	userlib.SetDebugStatus(true)
+	userlib.DebugMsg("Symmetric Key: %v", newSymmetricKey)
+	userlib.SetDebugStatus(false)
+
 }
 
 // Helper function: Takes the first 16 bytes and
@@ -78,12 +98,28 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 	return
 }
 
+
+
+
 // The structure definition for a user record
 type User struct {
 	Username string
 	Password string
 	Argon2KeyFromPassword []byte
+	CurrentSymmetricKey []byte
+	NextSymmetricKey []byte
+	DSSignKey userlib.DSSignKey
 
+	/*OwnedFilesMap [filename -> metaUUID(PersonalUUID_2_FileInfo), filename2 ->
+	metaUUID(PersonalUUID_2_FileInfo)]*/
+	//OwnedFiles[filename1,filename2,filename3 ]
+	//FileMetaDataKeys[filename:privatekey, filename2,privatekey]
+/*
+	ownedFile =
+	AccessibleFile =
+	files File
+	fileAccessInfo FileAccessInfo
+*/
 	//UsernameKey int
 	//PasswordSalt [] byte
 	//PrivateKey int
@@ -92,6 +128,47 @@ type User struct {
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
 }
+
+/*
+type FileAccessInfo {
+	filename
+	UUID_byteslice
+}
+
+{
+	Filename string
+	Filekey PrivateKey
+}
+
+
+type File struct {
+	filename string
+	filesize size
+	filedata byte[]
+}
+*/
+/*
+********************************************
+**    Hash-based key derivation function  **
+**        		 HKDF  	            	  **
+********************************************
+*/
+
+// Generate 128-bit symmetric key from previous previous 128-bit symmetric key
+func HKDF(Previouskey []byte) ([]byte, error) {
+   randomBytes := userlib.RandomBytes(256) 
+   key, err := userlib.HMACEval(Previouskey, randomBytes)
+   if err != nil{
+   		return nil, err
+   }
+
+   //postprocessing to get first 16 bytes symmetric key
+   newSymmetricKey := key[:len(key)- 16]
+
+   return newSymmetricKey, nil
+}
+
+
 
 // This creates a user.  It will only be called once for a user
 // (unless the keystore and datastore are cleared during testing purposes)
@@ -203,10 +280,41 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	return userdataptr, nil
 }
 
+//not in use right now
+func DeepEqual(a, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i, v := range a {
+        if v != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
 // This stores a file in the datastore.
 //
 // The name and length of the file should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
+	//NEED: confidentiality and integrity guarantees
+	//different users should be allowed to use the same filename 
+	//without interfering with each other
+
+
+
+	return
+}
+
+// This loads a file from the Datastore.
+//
+// It should give an error if the file is corrupted in any way.
+func (userdata *User) LoadFile(filename string) (data []byte, err error) {
+	//In the case that the filedoesn’t exist,
+	//or if it appears to have been tampered with, 
+	//return nil as the data and trigger an error.
+
+
 	return
 }
 
@@ -217,15 +325,16 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 // metadata you need.
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+//If the file does not exist, return nil as the data and trigger an error
+//You do not need to check the integrity of the existing file; however, 
+//if the file is badly broken, return nil as the data and trigger an error. 
+//Do not forget to update the user structure if you change it.
+//Note: if the file has a size of 1000TB, and you just want to add 
+//one byte, you should not need to download or decrypt the whole file
+
 	return
 }
 
-// This loads a file from the Datastore.
-//
-// It should give an error if the file is corrupted in any way.
-func (userdata *User) LoadFile(filename string) (data []byte, err error) {
-	return
-}
 
 // This creates a sharing record, which is a key pointing to something
 // in the datastore to share with the recipient.
