@@ -36,6 +36,7 @@ func TestInit(t *testing.T) {
 	// You probably want many more tests here.
 }
 
+
 func TestStorage(t *testing.T) {
 	// And some more tests, because
 	u, err := GetUser("alice", "fubar")
@@ -104,6 +105,7 @@ func TestShare(t *testing.T) {
 
 }
 
+/*
 func TestHashBasedDFunc(t *testing.T) {
 
 	// You may want to turn it off someday
@@ -123,29 +125,4 @@ func TestHashBasedDFunc(t *testing.T) {
 	// If you want to comment the line above,
 	// write _ = u here to make the compiler happy
 
-}
-
-//Testing AppendFile here
-func TestAppend(t *testing.T) {
-	// And some more tests, because
-	u, err := GetUser("alice", "fubar")
-	if err != nil {
-		t.Error("Failed to reload user", err)
-		return
-	}
-	t.Log("Loaded user", u)
-
-	v := []byte("This is a test")
-	u.StoreFile("file1", v)
-
-
-	v2, err2 := u.LoadFile("file1")
-	if err2 != nil {
-		t.Error("Failed to upload and download", err2)
-		return
-	}
-	if !reflect.DeepEqual(v, v2) {
-		t.Error("Downloaded file is not the same", v, v2)
-		return
-	}
-}
+}*/
