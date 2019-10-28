@@ -96,40 +96,6 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 	return
 }
 
-// The structure definition for a user record
-type User struct {
-	Username              string
-	Password              string
-	Argon2KeyFromPassword []byte
-	CurrentSymmetricKey   []byte
-	NextSymmetricKey      []byte
-	DSSignKey             userlib.DSSignKey
-
-	/*
-		OwnedFilesMap [filename -> metaUUID(PersonalUUID_2_FileInfo), filename2 ->
-		metaUUID(PersonalUUID_2_FileInfo)]*/
-	//OwnedFiles[filename1,filename2,filename3 ]
-	//FileMetaDataKeys[filename:privatekey, filename2,privatekey]
-	/*
-		ownedFile =
-		AccessibleFile =
-		files File
-		fileAccessInfo FileAccessInfo
-	*/
-	//UsernameKey int
-	//PasswordSalt [] byte
-	//PrivateKey int
-
-	// You can add other fields here if you want...
-	// Note for JSON to marshal/unmarshal, the fields need to
-	// be public (start with a capital letter)
-}
-
-type SignedUser struct {
-	UserData  []byte
-	Signature []byte
-}
-
 /*
 type FileAccessInfo {
 	filename
@@ -148,26 +114,6 @@ type File struct {
 	filedata byte[]
 }
 */
-/*
-********************************************
-**    Hash-based key derivation function  **
-**        		 HKDF  	            	  **
-********************************************
- */
-
-// Generate 128-bit symmetric key from previous previous 128-bit symmetric key
-func HKDF(Previouskey []byte) ([]byte, error) {
-	randomBytes := userlib.RandomBytes(256)
-	key, err := userlib.HMACEval(Previouskey, randomBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	//postprocessing to get first 16 bytes symmetric key
-	newSymmetricKey := key[:len(key)-16]
-
-	return newSymmetricKey, nil
-}
 
 // This creates a user.  It will only be called once for a user
 // (unless the keystore and datastore are cleared during testing purposes)
@@ -190,7 +136,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	//Generate UUID from username
 	usernameBytes := []byte(username) //convert username to bytes
-	new_UUID, _ := uuid.FromBytes(usernameBytes[:16])
+	newUUID, _ := uuid.FromBytes(usernameBytes[:16])
 
 	//Generate random salt, use this with password to get key using argon2
 	passwordBytes := []byte(password) //convert password string to bytes
@@ -198,14 +144,15 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	argon2KeyFromPassword := userlib.Argon2Key(passwordBytes, randomSalt, 32)
 
-	//store username and password in struct
+	//store username and UserSalt in struct
 	userdataptr.Username = username
+	userdataptr.UserSalt = randomSalt
+
 
 	//generate first symmetric key
 	randomSalt2 := userlib.RandomBytes(256)
 
 	privateKeyBytes := userlib.Argon2Key(passwordBytes, randomSalt2, 32)
-
 	//use private key in hdfk to get currentSymmetricKey
 	symmetricKey, err := HKDF(privateKeyBytes)
 	if err != nil {
@@ -217,24 +164,34 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	//genarate another  key
 	randomSalt3 := userlib.RandomBytes(256)
 
-	privateKeyBytes = userlib.Argon2Key(passwordBytes, randomSalt3, 32)
+	privateKeyBytes2 := userlib.Argon2Key(passwordBytes, randomSalt3, 32)
+
 	//use 2nd private key in hdfk to get nextSymmetricKey
-	symmetricKey, err = HKDF(privateKeyBytes)
+	symmetricKey2, err := HKDF(privateKeyBytes2)
 	if err != nil {
 		return nil, nil
 	}
 	//store nextSymmetricKey in struct
-	userdataptr.NextSymmetricKey = symmetricKey
+	userdataptr.NextSymmetricKey = symmetricKey2
 
 	//Generate digital signature key
 	dSSignKey, dSVerifyKey, err := userlib.DSKeyGen()
 
 	userdataptr.Password = password
-	//userdataptr.PasswordSalt = randomSalt
 	userdataptr.Argon2KeyFromPassword = argon2KeyFromPassword
+	//userdataptr.PasswordSalt = randomSalt
 
 	userdataptr.DSSignKey = dSSignKey
 
+	/*
+		//Generate User's Publics and Private Key
+		pkeEncKey, pkeDecKey, err := userlib.PKEKeyGen()
+		//Store Public key in keystore
+		keyStr := username + "PublicKey"
+		userlib.KeystoreSet(keyStr, pkeEncKey)
+		//Store private key is user struct
+		userdataptr.PrivateKey = pkeDecKey
+	*/
 	//Marshal user struct
 	userMarshalled, err := json.Marshal(userdataptr)
 
@@ -258,16 +215,16 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	signature, err := userlib.DSSign(dSSignKey, userData)
 	key := username + "DSVerifyKey"
 	userlib.KeystoreSet(key, dSVerifyKey)
-	var signedUser SignedUser
-	signedUser.UserData = userData
+	var signedUser DSSignedData
+	signedUser.Data = userData
 	signedUser.Signature = signature
 	//userDataWithSignature := append(userData, signature...)
 
 	signedUserMarshalled, err := json.Marshal(signedUser)
 
 	//upload userData
-	//userlib.DatastoreSet(new_UUID, userDataWithSignature)
-	userlib.DatastoreSet(new_UUID, signedUserMarshalled)
+	//userlib.DatastoreSet(newUUID, userDataWithSignature)
+	userlib.DatastoreSet(newUUID, signedUserMarshalled)
 
 	return &userdata, nil
 }
@@ -281,10 +238,10 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 
 	//Create UUID from username
 	usernameBytes := []byte(username) //convert username to bytes
-	user_UUID, _ := uuid.FromBytes(usernameBytes[:16])
+	userUUID, _ := uuid.FromBytes(usernameBytes[:16])
 
 	//look for username in datastore
-	userDataWithSaltandSignature, ok := userlib.DatastoreGet(user_UUID)
+	userDataWithSaltandSignature, ok := userlib.DatastoreGet(userUUID)
 	if ok == false { //if the user can't be found.
 		return userdataptr, err //return empty user and nil
 
@@ -299,17 +256,20 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 		err = DSVerify(verifyKey, userDataWithSalt, signature) error.
 		if no err, file is valid else return nil User and error
 	*/
-	var signedUser SignedUser
+	var signedUser DSSignedData
 	err = json.Unmarshal(userDataWithSaltandSignature, &signedUser)
+	if err != nil { //if key doesn't exist in keystore
+		return userdataptr, err
+	}
 
-	//signature := userDataWithSaltandSignature[len(userDataWithSaltandSignature)-256:]
-	signature := signedUser.Signature
 	dSVerifyKey, ok := userlib.KeystoreGet(username + "DSVerifyKey")
 	if ok == false { //if key doesn't exist in keystore
 		return userdataptr, err
 	}
+	//signature := userDataWithSaltandSignature[len(userDataWithSaltandSignature)-256:]
+	signature := signedUser.Signature
 	//userDataWithSalt := userDataWithSaltandSignature[:len(userDataWithSaltandSignature)-256]
-	userDataWithSalt := signedUser.UserData
+	userDataWithSalt := signedUser.Data
 	err = userlib.DSVerify(dSVerifyKey, userDataWithSalt, signature)
 	if err != nil { //if the user data was corrupted
 		return userdataptr, err //return empty user and nil
@@ -345,17 +305,38 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	return userdataptr, nil
 }
 
-//not in use right now
-func DeepEqual(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
+// The structure definition for a user record
+type User struct {
+	Username              string
+	Password              string
+	Argon2KeyFromPassword []byte
+	CurrentSymmetricKey   []byte
+	NextSymmetricKey      []byte
+	DSSignKey             userlib.DSSignKey
+	OwnedFiles            map[string]uuid.UUID // [filename -> metaUUID(PersonalUUID_2_FileInfo),...]
+	//PrivateKey            userlib.PKEDecKey
+	FileMetaDataKeys      map[string]userlib.PrivateKeyType
+	UserSalt []byte
+	//FileMetaDataKeys[filename:privatekey, filename2,privatekey]
+	/*
+		ownedFile =
+		AccessibleFile =
+		files File
+		fileAccessInfo FileAccessInfo
+	*/
+}
+
+type DSSignedData struct {
+	Data  []byte
+	Signature []byte
+}
+
+type FileMetaData struct {
+	FileUUIDArray                  []uuid.UUID
+	AppendByteUUID                 uuid.UUID
+	FileSymmetricKey               []byte
+	OwnersUsername                 string
+	SharedMetaDataSymmetricKeysMap map[string][]byte //users shared with and their metadata Symmetric Keys
 }
 
 // This stores a file in the datastore.
@@ -365,6 +346,141 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	//NEED: confidentiality and integrity guarantees
 	//different users should be allowed to use the same filename
 	//without interfering with each other
+	// create FileMetaData object
+	var fileMetaData FileMetaData
+
+
+	// FileMetaData.FileUUID = generate random uuid for file and appendByte
+	fileUUID := uuid.New()
+	fileMetaData.FileUUIDArray = append(fileMetaData.FileUUIDArray, fileUUID)
+	appendByteUUID := uuid.New()
+	fileMetaData.AppendByteUUID = appendByteUUID
+
+	// FileMetaData.FileSymmetricKey = FileSymmetricKey
+	//Generate new next Symmetric key with HKDF
+	fileMetaData.FileSymmetricKey = userdata.CurrentSymmetricKey
+	userdata.CurrentSymmetricKey = userdata.NextSymmetricKey
+	userdata.NextSymmetricKey, _ = HKDF(fileMetaData.FileSymmetricKey)
+
+
+	// AppendBit = data’s last byte
+	appendByte := data[len(data)-1:]
+	// data = data except last bit
+	fileData := data[:len(data)-1]
+
+	// encryptData = encrypt data with FileMetaData.FileSymmetricKey
+	randomIV := userlib.RandomBytes(16)
+	encryptedFileData := userlib.SymEnc(fileMetaData.FileSymmetricKey, randomIV, fileData)
+
+	//encryptAppendByte = encrypt AppendByte with FileMetaData.FileSymmetricKey
+	randomIV = userlib.RandomBytes(16)
+	encryptedAppendByte := userlib.SymEnc(fileMetaData.FileSymmetricKey, randomIV, appendByte)
+
+
+	//INTEGRITY STEP
+	// generate digital key pair or get user's digital key
+	//dSSignKey, dSVerifyKey, err := userlib.DSKeyGen()
+	dSSignKey := userdata.DSSignKey
+
+	//encryptedfileDataSignature = sign encryptedfileData with private digital signature key
+	encryptedFileDataSignature, _ := userlib.DSSign(dSSignKey, encryptedFileData)
+	var signedFileData DSSignedData
+	signedFileData.Data = encryptedFileData
+	signedFileData.Signature = encryptedFileDataSignature
+	//encryptedAppendByteSignature = sign encryptedAppendByte with private digital signature key
+	encryptedAppendByteSignature, _ := userlib.DSSign(dSSignKey, encryptedAppendByte)
+	var signedAppendByte DSSignedData
+	signedAppendByte.Data = encryptedAppendByte
+	signedAppendByte.Signature = encryptedAppendByteSignature
+
+	signedFileDataMarshalled, _ := json.Marshal(signedFileData)
+	signedAppendByteMarshalled, _ := json.Marshal(signedAppendByte)
+
+	userlib.DatastoreSet(fileUUID, signedFileDataMarshalled)
+	userlib.DatastoreSet(appendByteUUID, signedAppendByteMarshalled)
+	/*
+	 ********************************************
+	 **   		 							   **
+	 **        		 METADATA  	               **
+	 ********************************************
+	 */
+
+	//Generate Public and Private Key for file
+	pkeEncKey, pkeDecKey, _ := userlib.PKEKeyGen()
+	//Store FileMetaData Public key in keystore
+	keyStr := userdata.Username + filename + "MetaDataPublicKey"
+	userlib.KeystoreSet(keyStr, pkeEncKey)
+	//Store FileMetaData private key is user struct// will store symmetric key for user share with
+	userdata.FileMetaDataKeys = make(map[string]userlib.PKEDecKey)
+	userdata.FileMetaDataKeys[filename] = pkeDecKey
+
+	// FileMetaData.OwnersUsername = username
+	fileMetaData.OwnersUsername = userdata.Username
+
+	// encryptFileMetaData with file public key
+	//if using the same public key then userPublicKey, _ := userlib.KeystoreGet(userdata.Username + "PublicKey")
+	fileMetaDataMarshalled, _ := json.Marshal(fileMetaData)
+	encryptedFileMetaData, _ := userlib.PKEEnc(pkeEncKey, fileMetaDataMarshalled)
+
+	// mix filename with username to get metaUUID
+	metaUUIDString := filename + userdata.Username
+	metaUUIDBytes := []byte(metaUUIDString) //convert username to bytes
+	metaUUID, _ := uuid.FromBytes(metaUUIDBytes[:16])
+
+	// In OwnedFilesMap, create filename maps -> metaUUID
+	userdata.OwnedFiles = make(map[string]uuid.UUID)
+	userdata.OwnedFiles[filename] = metaUUID
+
+	//METADATA INTEGRITY STEP
+
+	//encryptedMetaDataSignature = sign encryptFileMetaData with private digital signature key
+	encryptedFileMetaDataSignature, _ := userlib.DSSign(dSSignKey, encryptedFileMetaData)
+	var signedEncryptedFileMetaData DSSignedData
+	signedEncryptedFileMetaData.Data = encryptedFileMetaData
+	signedEncryptedFileMetaData.Signature = encryptedFileMetaDataSignature
+	signedEncryptedFileMetaDataMarshalled, _ := json.Marshal(signedEncryptedFileMetaData)
+	userlib.DatastoreSet(metaUUID, signedEncryptedFileMetaDataMarshalled)
+
+	//if generating new digital for each file then follow this step
+	// KeyStoreSet(usernameFilenameDSVerifyKey: FileDSVerifyKey)
+
+	////////////
+	//get user salt and argon2Key
+	userSalt := userdata.UserSalt
+	argon2KeyFromPassword := userdata.Argon2KeyFromPassword
+
+	//Form UUID from username
+	usernameBytes := []byte(userdata.Username) //convert username to bytes
+	userUUID, _ := uuid.FromBytes(usernameBytes[:16])
+
+	//Marshal user struct
+	userMarshalled, _ := json.Marshal(userdata)
+
+	//generate random iv
+	randomIV = userlib.RandomBytes(16)
+
+	//do symmetric encryption with argon2 key on the user bytes
+	userMarshalledCiphertext := userlib.SymEnc(argon2KeyFromPassword, randomIV, userMarshalled)
+
+	//append 256 bytes salt to user bytes
+	userData := append(userMarshalledCiphertext, userSalt...)
+
+	//INTEGRITY STEP
+	/*
+		sign whole user struct with DSSignKey and store this
+		KeyStoreset(usernameDSVerifyKey, DSVerifyKey)
+		DatastoreSet(UUID, STRUCT:SALT)
+	*/
+	signature, _ := userlib.DSSign(dSSignKey, userData)
+
+	var signedUser DSSignedData
+	signedUser.Data = userData
+	signedUser.Signature = signature
+
+	signedUserMarshalled, _ := json.Marshal(signedUser)
+
+	//upload userData
+	userlib.DatastoreSet(userUUID, signedUserMarshalled)
 
 	return
 }
@@ -376,6 +492,8 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	//In the case that the filedoesn’t exist,
 	//or if it appears to have been tampered with,
 	//return nil as the data and trigger an error.
+	//dSKeyStr := userdata.Username + "DSVerifyKey"
+	//dSVerifyKey, _ := userlib.KeystoreGet(dSKeyStr)
 
 	return
 }
@@ -426,4 +544,37 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 // Removes target user's access.
 func (userdata *User) RevokeFile(filename string, target_username string) (err error) {
 	return
+}
+
+/*
+********************************************
+**    Hash-based key derivation function  **
+**        		 HKDF  	            	  **
+********************************************
+ */
+// Generate 128-bit symmetric key from previous previous 128-bit symmetric key
+func HKDF(previouskey []byte) ([]byte, error) {
+	randomBytes := userlib.RandomBytes(256)
+	key, err := userlib.HMACEval(previouskey, randomBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	//postprocessing to get first 36 bytes symmetric key
+	//newSymmetricKey := key[:len(key)-32]
+	newSymmetricKey := key[:16]
+	return newSymmetricKey, nil
+}
+
+//not in use right now
+func DeepEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }
