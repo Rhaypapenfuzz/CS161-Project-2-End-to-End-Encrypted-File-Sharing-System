@@ -494,33 +494,6 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 }
 
 
-// The structure definition for a user record
-type User struct {
-	Username              string
-	Password              string
-	Argon2KeyFromPassword []byte
-	CurrentSymmetricKey   []byte
-	NextSymmetricKey      []byte
-	DSSignKey             userlib.DSSignKey
-	OwnedFiles            map[string]uuid.UUID //[filename -> metaUUID(PersonalUUID_2_FileInfo),...]
-	PrivateKey            userlib.PKEDecKey
-	FileMetaDataKeys      map[string][]byte//FileMetaDataKeys[filename:SymmetricKey, filename2,privatekey]
-	UserSalt []byte
-}
-
-type DSSignedData struct {
-	Data  []byte
-	Signature []byte
-}
-
-type FileMetaData struct {
-	FileUUIDArray                  []uuid.UUID
-	//AppendByteUUID                 uuid.UUID
-	FileSymmetricKey               []byte
-	OwnersUsername                 string
-	SharedMetaDataSymmetricKeysMap map[string][]byte //users shared with and their metadata Symmetric Keys
-}
-
 // This loads a file from the Datastore.
 //
 // It should give an error if the file is corrupted in any way.
@@ -654,6 +627,33 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 }
 
 
+// The structure definition for a user record
+type User struct {
+	Username              string
+	Password              string
+	Argon2KeyFromPassword []byte
+	CurrentSymmetricKey   []byte
+	NextSymmetricKey      []byte
+	DSSignKey             userlib.DSSignKey
+	OwnedFiles            map[string]uuid.UUID //[filename -> metaUUID(PersonalUUID_2_FileInfo),...]
+	PrivateKey            userlib.PKEDecKey
+	FileMetaDataKeys      map[string][]byte//FileMetaDataKeys[filename:SymmetricKey, filename2,privatekey]
+	UserSalt []byte
+}
+
+type DSSignedData struct {
+	Data  []byte
+	Signature []byte
+}
+
+type FileMetaData struct {
+	FileUUIDArray                  []uuid.UUID
+	//AppendByteUUID                 uuid.UUID
+	FileSymmetricKey               []byte
+	OwnersUsername                 string
+	SharedMetaDataSymmetricKeysMap map[string][]byte //users shared with and their metadata Symmetric Keys
+}
+
 // This adds on to an existing file.
 //
 // Append should be efficient, you shouldn't rewrite or reencrypt the
@@ -665,8 +665,128 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//You do not need to check the integrity of the existing file; however,
 	//if the file is badly broken, return nil as the data and trigger an error.
 	//Do not forget to update the user structure if you change it.
-	//Note: if the file has a size of 1000TB, and you just want to add
-	//one byte, you should not need to download or decrypt the whole file
+
+	//look in owned files for file metaUUID using filename
+	metaUUID, found := userdata.OwnedFiles[filename]
+	if found == false { //	if metaUUID doesn’t exist abort
+		return err
+	}
+	//get for encryptedFileMetaData in datastore
+	encryptedFileMetaData, ok := userlib.DatastoreGet(metaUUID)
+	if ok == false { //if the data can't be found.
+		return err //return err
+	}
+	//get symmetric key and decrypt encryptedFileMetaData for this file
+	symmetricKey, found := userdata.FileMetaDataKeys[filename]
+	if found == false { //	if filename doesn’t exist abort
+		return err
+	}
+	decryptedFileMetaDataMarshalled := userlib.SymDec(symmetricKey, encryptedFileMetaData)
+
+	//unmarshal and get File MetaData
+	var decryptedFileMetaData FileMetaData
+	err = json.Unmarshal(decryptedFileMetaDataMarshalled, &decryptedFileMetaData)
+	if err != nil { //if unable to marshall
+		return err //return empty user and nil
+	}
+	
+	//generate random new FileDataUUID and append UUID to FileUUIDArray
+	newFileDataUUID := uuid.New()
+	decryptedFileMetaData.FileUUIDArray = append(decryptedFileMetaData.FileUUIDArray, newFileDataUUID)
+
+	// encryptData = encrypt newFileData with FileMetaData.FileSymmetricKey
+	randomIV := userlib.RandomBytes(16)
+	encryptedFileData := userlib.SymEnc(symmetricKey, randomIV, data)
+
+	/*
+	 ********************************************
+	 **   		  Integrity Step 			   **
+	 **        		 New Data  	               **
+	 ********************************************
+	 */
+	//INTEGRITY STEP
+	//get user's digital signing key
+	dSSignKey := userdata.DSSignKey
+	//get user's digital verifying key
+	dSFileVerifyKey, _ := userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+	//upload digital verifying key for appended data's to keystore
+	fileKeyStr := newFileDataUUID.String()
+	fileKeyStr = fileKeyStr + "DSVerifyKey"
+	userlib.KeystoreSet(fileKeyStr, dSFileVerifyKey)
+	
+	//encryptedfileDataSignature = sign encryptedfileData with private digital signature key
+	encryptedFileDataSignature, _ := userlib.DSSign(dSSignKey, encryptedFileData)
+
+	var signedFileData DSSignedData
+	signedFileData.Data = encryptedFileData
+	signedFileData.Signature = encryptedFileDataSignature
+
+	signedFileDataMarshalled, _ := json.Marshal(signedFileData)
+
+	userlib.DatastoreSet(newFileDataUUID, signedFileDataMarshalled)
+
+
+	/*
+	 ********************************************
+	 **   		  Integrity Step 			   **
+	 **        		 METADATA  	               **
+	 ********************************************
+	 */
+
+	// marshal encryptFileMetaData
+	fileMetaDataMarshalled, _ := json.Marshal(decryptedFileMetaData)
+	//generate random iv
+	randomIV = userlib.RandomBytes(16)
+	//get user's FileMetaData symmetric encryption key
+	symmetricKey = userdata.FileMetaDataKeys[filename]
+	//encrypt fileMetaData
+	encryptedFileMetaData = userlib.SymEnc(symmetricKey, randomIV, fileMetaDataMarshalled)
+
+
+	//sign encryptedFileMetaData with private digital signature key
+	encryptedFileMetaDataSignature, _ := userlib.DSSign(dSSignKey, encryptedFileMetaData)
+	var signedEncryptedFileMetaData DSSignedData
+	signedEncryptedFileMetaData.Data = encryptedFileMetaData
+	signedEncryptedFileMetaData.Signature = encryptedFileMetaDataSignature
+	signedEncryptedFileMetaDataMarshalled, _ := json.Marshal(signedEncryptedFileMetaData)
+	userlib.DatastoreSet(metaUUID, signedEncryptedFileMetaDataMarshalled)
+
+	//Upload userData
+	//get user salt and argon2Key
+	userSalt := userdata.UserSalt
+	argon2KeyFromPassword := userdata.Argon2KeyFromPassword
+
+	//Form UUID from username
+	usernameBytes := []byte(userdata.Username) //convert username to bytes
+	userUUID, _ := uuid.FromBytes(usernameBytes[:16])
+
+	//Marshal user struct
+	userMarshalled, _ := json.Marshal(userdata)
+
+	//generate random iv
+	randomIV = userlib.RandomBytes(16)
+
+	//do symmetric encryption with argon2 key on the user bytes
+	userMarshalledCiphertext := userlib.SymEnc(argon2KeyFromPassword, randomIV, userMarshalled)
+
+	//append 256 bytes salt to user bytes
+	userData := append(userMarshalledCiphertext, userSalt...)
+
+	//INTEGRITY STEP
+	/*
+		sign whole user struct with DSSignKey and store this
+		DatastoreSet(UUID, STRUCT:SALT)
+	*/
+	signature, _ := userlib.DSSign(dSSignKey, userData)
+
+	var signedUser DSSignedData
+	signedUser.Data = userData
+	signedUser.Signature = signature
+
+	signedUserMarshalled, _ := json.Marshal(signedUser)
+
+	//upload userData
+	userlib.DatastoreSet(userUUID, signedUserMarshalled)
 
 	return
 }
