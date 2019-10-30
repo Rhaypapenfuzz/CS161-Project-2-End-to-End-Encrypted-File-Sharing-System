@@ -6,7 +6,7 @@ package proj2
 import (
 	_ "encoding/hex"
 	_ "encoding/json"
-	_ "errors"
+	"errors"
 	"github.com/cs161-staff/userlib"
 	"github.com/google/uuid"
 	"reflect"
@@ -14,6 +14,55 @@ import (
 	_ "strings"
 	"testing"
 )
+
+//
+
+func ResetDatastore() {
+	userlib.DatastoreClear()
+	userlib.KeystoreClear()
+	userlib.DebugMsg("cleared datastore")
+	userlib.DebugMsg("cleared keystore")
+
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		userlib.DebugMsg("user not re-intialized", err)
+	}
+
+	v := []byte("This is a test")
+	u.StoreFile("file1", v)
+
+	return
+}
+
+func ResetSharedFile(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
+
+	var file2 []byte
+	var magic_string string
+
+	file1, err := u.LoadFile(fn1)
+	if err != nil {
+		return err
+	}
+
+	magic_string, err = u.ShareFile(fn1, u2n)
+	if err != nil {
+		return err
+	}
+	err = u2.ReceiveFile(fn2, un, magic_string)
+	if err != nil {
+		return err
+	}
+
+	file2, err = u2.LoadFile(fn2)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(file1, file2) {
+		return errors.New("files not identical after sharing")
+	}
+
+	return nil
+}
 
 func TestInit(t *testing.T) {
 	t.Log("Initialization test")
@@ -71,7 +120,6 @@ func TestStorage(t *testing.T) {
 		t.Error("Failed to reload user", err)
 		return
 	}
-	t.Log("Loaded user", u)
 
 	v := []byte("This is a test")
 	u.StoreFile("file1", v)
@@ -196,8 +244,11 @@ func TestStoreOverwrite(t *testing.T) {
 	}
 }
 
-func SmallFileAppend(t *testing.T) {
-	var appended, data, v []byte
+func TestSmallFileAppend(t *testing.T) {
+	var appended, small, data []byte
+
+	small = []byte("This is a small file of text")
+	data = []byte("Data to Append")
 
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
@@ -205,49 +256,132 @@ func SmallFileAppend(t *testing.T) {
 		return
 	}
 
-	v, err = u.LoadFile("file1")
-	if err != nil {
-		t.Error("Failed to download", err)
-	}
+	u.StoreFile("smallfile", small)
 
-	data = []byte("data to append")
-	appended = append(v, data...)
-
-	err = u.AppendFile("file1", data)
+	err = u.AppendFile("smallfile", data)
 	if err != nil {
 		t.Error("Returned error with AppendFile", err)
 		return
 	}
 
-	v, err = u.LoadFile("file1")
+	appended, err = u.LoadFile("smallfile")
 	if err != nil {
 		t.Error("Failed to download", err)
+		return
 	}
-	_ = appended
+
+	small = append(small, data...)
+
+	if len(small) != len(appended) {
+		t.Error("Appended file does not have same length", len(small), len(appended))
+		return
+	}
+
+	if !reflect.DeepEqual(small, appended) {
+		t.Error("Appended file does not reflect changes")
+		return
+	}
 }
 
-func TestEfficientAppend(t *testing.T) {
-	var large []byte
+func TestLargeFileAppend(t *testing.T) {
+	var appended, large, data []byte
+
+	large = make([]byte, 60000)
+	for i := range large {
+		large[i] = '\x41'
+	}
+
+	data = []byte("data to append")
 
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to reload user", err)
 		return
 	}
-	uTest := &TestUser{}
-	uTest.ut = u
-	uTest.StoreFile("testfile", []byte("here is some data to put into the file"))
 
-	_ = large
+	u.StoreFile("largefile", large)
 
+	err = u.AppendFile("largefile", data)
+	if err != nil {
+		t.Error("Returned error with AppendFile", err)
+		return
+	}
+
+	appended, err = u.LoadFile("largefile")
+	if err != nil {
+		t.Error("Failed to download", err)
+		return
+	}
+
+	large = append(large, data...)
+
+	// files should be same length
+	if len(large) != len(appended) {
+		t.Error("Appended file not same length", len(large), len(appended))
+		return
+	}
+
+	// file contents SHOULD be equal
+	if !reflect.DeepEqual(large, appended) {
+		t.Error("Appended file does not reflect changes")
+		return
+	}
+
+}
+
+// Helper function to corrupt single byte
+func CorruptByte(b byte) byte {
+	return b + 1
 }
 
 // Single User Integrity
 
 func TestModifiedFile(t *testing.T) {
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	datastore := userlib.DatastoreGetMap()
+	for key, value := range datastore {
+		vlen := len(value)
+		if vlen > 0 {
+			value[vlen-1] = CorruptByte(value[vlen-1])
+			datastore[key] = value
+		}
+	}
+
+	_, err = u.LoadFile("file1")
+	// Should return error
+	if err == nil {
+		ResetDatastore()
+		t.Error("Failed to recognize corrupted byte in file", err)
+		return
+	}
+	ResetDatastore()
 }
 
-func TestModifiedUserData(t *testing.T) {
+func TestModifiedUser(t *testing.T) {
+
+	datastore := userlib.DatastoreGetMap()
+	for key, value := range datastore {
+		vlen := len(value)
+		if vlen > 0 {
+			value[vlen-1] = CorruptByte(value[vlen-1])
+			datastore[key] = value
+		}
+	}
+
+	_, err := GetUser("alice", "fubar")
+	if err == nil {
+		ResetDatastore()
+		t.Error("Failed to recognize corrupted byte in user data")
+		return
+	}
+	t.Log("Error msg is ", err)
+	ResetDatastore()
 }
 
 // Multi-User functionality
@@ -255,7 +389,7 @@ func TestModifiedUserData(t *testing.T) {
 func TestShare(t *testing.T) {
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
-		t.Error("Failed to reload user", err)
+		t.Error("Failed to reload user", err, u)
 		return
 	}
 	u2, err2 := InitUser("bob", "foobar")
@@ -297,15 +431,280 @@ func TestShare(t *testing.T) {
 }
 
 func TestShareAppend(t *testing.T) {
+	var aliceFile, bobFile, appendData []byte
+
+	appendData = []byte("more data to append")
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	u2, err2 := GetUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to reload user", err2)
+		return
+	}
+
+	err2 = u2.AppendFile("file2", appendData)
+	if err2 != nil {
+		t.Error("AppendFile failed", err2)
+	}
+
+	bobFile, err2 = u2.LoadFile("file2")
+	if err2 != nil {
+		t.Error("Failed to download file after append", err2)
+		return
+	}
+
+	aliceFile, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download shared file after other user appends", err)
+		return
+	}
+
+	// files should be equal
+	if !reflect.DeepEqual(aliceFile, bobFile) {
+		t.Error("Shared file is not the same among users")
+		return
+	}
 }
 
-func TestShareSet(t *testing.T) {
+func TestShareOverwrite(t *testing.T) {
+
+	var aliceFile, bobFile, newData []byte
+
+	newData = []byte("this is new data to put on the file")
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	u2, err2 := GetUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to reload user", err2)
+		return
+	}
+
+	u2.StoreFile("file2", newData)
+
+	bobFile, err2 = u2.LoadFile("file2")
+	if err2 != nil {
+		t.Error("Failed to download file after store", err2)
+		return
+	}
+
+	aliceFile, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download shared file after other user stores", err)
+		return
+	}
+
+	//files should equal newData
+	if !reflect.DeepEqual(aliceFile, newData) {
+		t.Error("Shared file was not updated for Alice")
+		return
+	}
+
+	// files should be equal
+	if !reflect.DeepEqual(aliceFile, bobFile) {
+		t.Error("Shared file is not the same among users")
+		return
+	}
 }
 
-func TestRevokeTwoUsers(t *testing.T) {
+func TestShareThreeUsers(t *testing.T) {
+	var aliceFile, bobFile, yoshiFile, sharedFile []byte
+	sharedFile = []byte("three users can share this file")
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	u2, err2 := GetUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to reload user", err2)
+		return
+	}
+
+	u3, err3 := InitUser("yoshi", "spottedegg")
+	if err3 != nil {
+		t.Error("Failed to initialize user", u3)
+		return
+	}
+
+	var magic_string string
+
+	u.StoreFile("shared3", sharedFile)
+
+	aliceFile, err = u.LoadFile("shared3")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+		return
+	}
+
+	// share file with bob
+	magic_string, err = u.ShareFile("sharedd", "bob")
+	if err != nil {
+		t.Error("Failed to share the file with bob", err)
+		return
+	}
+	err = u2.ReceiveFile("shared3bob", "alice", magic_string)
+	if err != nil {
+		t.Error("Bob failed to receive the shared message", err)
+		return
+	}
+
+	// share file with yoshi
+	magic_string, err = u.ShareFile("shared3", "yoshi")
+	if err != nil {
+		t.Error("Failed to share the a file with yoshi", err)
+		return
+	}
+	err = u3.ReceiveFile("shared3yoshi", "alice", magic_string)
+	if err != nil {
+		t.Error("Yoshi failed to receive the shared message", err)
+		return
+	}
+
+	bobFile, err = u2.LoadFile("shared3bob")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+		return
+	}
+
+	yoshiFile, err = u3.LoadFile("shared3yoshi")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+		return
+	}
+
+	if !reflect.DeepEqual(aliceFile, sharedFile) {
+		t.Error("Alice does not have shared file", sharedFile, aliceFile)
+		return
+	}
+
+	if !reflect.DeepEqual(yoshiFile, sharedFile) {
+		t.Error("Yoshi does not have shared file", sharedFile, yoshiFile)
+		return
+	}
+
+	if !reflect.DeepEqual(bobFile, sharedFile) {
+		t.Error("Bob does not have shared file", sharedFile, bobFile)
+		return
+	}
 }
 
-func TestShareRevokeLargeFamily(t *testing.T) {
+func TestRevokeOwnerAppend(t *testing.T) {
+	var file1, file2 []byte
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	err = u.RevokeFile("file1", "bob")
+	if err != nil {
+		t.Error("RevokeFile failed", err)
+		return
+	}
+
+	err = u.AppendFile("file1", []byte("Bob shouldn't see this"))
+	if err != nil {
+		t.Error("AppendFile failed for owner", err)
+		return
+	}
+
+	u2, err := GetUser("bob", "foobar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	file1, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download file for owner", err)
+		return
+	}
+
+	file2, err = u2.LoadFile("file2")
+
+	if reflect.DeepEqual(file2, file1) {
+		t.Error("Bob saw updated version of Alice's file after AppendFile", file1, file2)
+		return
+	}
+}
+
+func TestRevokeOwnerStore(t *testing.T) {
+	var file1, file2 []byte
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	u2, err := GetUser("bob", "foobar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	// Share file with Bob again
+	err = ResetSharedFile(u, u2, "file1", "file2", "alice", "bob")
+	if err != nil {
+		t.Error("Shared file failed", err)
+	}
+
+	// Revoke Bob's file then store new file
+	err = u.RevokeFile("file1", "bob")
+	if err != nil {
+		t.Error("Revoke file failed", err)
+		return
+	}
+
+	u.StoreFile("file1", []byte("New data that Bob still shouldn't see"))
+
+	file1, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download file for owner after StoreFile", err)
+		return
+	}
+
+	file2, err = u2.LoadFile("file2")
+
+	if reflect.DeepEqual(file2, file1) {
+		t.Error("Bob saw updated version of Alice's file after StoreFile", file1, file2)
+		return
+	}
+}
+
+func TestRevokeRecipientAppend(t *testing.T) {
+}
+
+func TestRecipientStore(t *testing.T) {
+}
+
+func TestRevokeThreeUsers(t *testing.T) {
+}
+
+// Test with children
+
+func TestShareChild(t *testing.T) {
+}
+
+func TestRevokeChild(t *testing.T) {
+}
+
+// Test with children and siblings
+
+func TestRevokeChildSibling(t *testing.T) {
 }
 
 // Multi-user Integrity Test
