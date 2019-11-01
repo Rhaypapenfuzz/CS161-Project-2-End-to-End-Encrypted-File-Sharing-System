@@ -149,6 +149,8 @@ func RevokedRecipientAppend(u *User, u2 *User, fn1 string, fn2 string, un string
 
 	// Files should NOT be equal
 	if reflect.DeepEqual(ownerFile, recipFile) {
+		userlib.DebugMsg(string(ownerFile))
+		userlib.DebugMsg(string(recipFile))
 		return errors.New("File access was NOT denied")
 	}
 
@@ -649,6 +651,21 @@ func TestShare(t *testing.T) {
 
 }
 
+func TestBadShareFilename(t *testing.T) {
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err, u)
+		return
+	}
+
+	_, err = u.ShareFile("fileDoesNotExist", "bob")
+	if err == nil {
+		t.Error("failed to catch error: file does not exist")
+		return
+	}
+}
+
 func TestReceiveDupFilename(t *testing.T) {
 	var magic_string string
 
@@ -938,7 +955,7 @@ func TestRevokeOwnerAppend(t *testing.T) {
 		return
 	}
 
-	err = u.RevokeFile("file1", "bob")
+	err = u.RevokeFile("sharedFile1a", "bob")
 	if err != nil {
 		t.Error("RevokeFile failed", err)
 		return
@@ -1043,7 +1060,9 @@ func TestRevokeThreeUsers(t *testing.T) {
 
 	// Store new file
 	u.StoreFile("sharedFile3U2", sharedFile)
-	_, err = u.LoadFile("sharedFile3U2")
+	sharedFileBeforeRevoke, err := u.LoadFile("sharedFile3U2")
+	userlib.DebugMsg(string(sharedFile))
+	userlib.DebugMsg(string(sharedFileBeforeRevoke))
 	if err != nil {
 		t.Error("Failed to upload or download sharedFile3U2", err)
 	}
@@ -1064,6 +1083,14 @@ func TestRevokeThreeUsers(t *testing.T) {
 	err = u.RevokeFile("sharedFile3U2", "bob")
 	if err != nil {
 		t.Error("Revoke file failed", err)
+		return
+	}
+
+	sharedFileAfterRevoke, err := u.LoadFile("sharedFile3U2")
+	userlib.DebugMsg(string(sharedFile))
+	userlib.DebugMsg(string(sharedFileAfterRevoke))
+	if !reflect.DeepEqual(sharedFileAfterRevoke, sharedFile) {
+		t.Error("Alice failed to download file after revoke", err, sharedFileAfterRevoke, sharedFile)
 		return
 	}
 

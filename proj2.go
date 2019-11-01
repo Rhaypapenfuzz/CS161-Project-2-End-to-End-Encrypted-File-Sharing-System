@@ -95,29 +95,6 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 	}
 	return
 }
-/*
-type FileAccessInfo {
-	filename
-	UUID_byteslice
-}
-
-{
-	Filename string
-	Filekey PrivateKey
-}
-
-
-type File struct {
-	filename string
-	filesize size
-	filedata byte[]
-}
-*/
-
-type SignedUser struct {
-	UserData  []byte
-	Signature []byte
-}
 
 /*
 type FileAccessInfo {
@@ -137,26 +114,6 @@ type File struct {
 	filedata byte[]
 }
 */
-/*
-********************************************
-**    Hash-based key derivation function  **
-**        		 HKDF  	            	  **
-********************************************
- */
-
-// Generate 128-bit symmetric key from previous previous 128-bit symmetric key
-func HKDF(Previouskey []byte) ([]byte, error) {
-	randomBytes := userlib.RandomBytes(256)
-	key, err := userlib.HMACEval(Previouskey, randomBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	//postprocessing to get first 16 bytes symmetric key
-	newSymmetricKey := key[:len(key)-16]
-
-	return newSymmetricKey, nil
-}
 
 // This creates a user.  It will only be called once for a user
 // (unless the keystore and datastore are cleared during testing purposes)
@@ -181,7 +138,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	usernameBytes := []byte(username) //convert username to bytes
 	newUUID, _ := uuid.FromBytes(usernameBytes[:16])
 
-
 	//Generate random salt, use this with password to get key using argon2
 	passwordBytes := []byte(password) //convert password string to bytes
 	randomSalt := userlib.RandomBytes(256)
@@ -192,12 +148,10 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdataptr.Username = username
 	userdataptr.UserSalt = randomSalt
 
-
 	//generate first symmetric key
 	randomSalt2 := userlib.RandomBytes(256)
 
 	privateKeyBytes := userlib.Argon2Key(passwordBytes, randomSalt2, 32)
-
 	//use private key in hdfk to get currentSymmetricKey
 	symmetricKey, err := HKDF(privateKeyBytes)
 	if err != nil {
@@ -208,7 +162,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	//genarate another  key
 	randomSalt3 := userlib.RandomBytes(256)
-
 
 	privateKeyBytes2 := userlib.Argon2Key(passwordBytes, randomSalt3, 32)
 
@@ -239,8 +192,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	userdataptr.OwnedFiles = make(map[string]uuid.UUID)
 	userdataptr.FileMetaDataKeys = make(map[string][]byte)
-
-	userdataptr.DSSignKey = dSSignKey
 
 	//Marshal user struct
 	userMarshalled, err := json.Marshal(userdataptr)
@@ -355,19 +306,6 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	return userdataptr, nil
 }
 
-//not in use right now
-func DeepEqual(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // This stores a file in the datastore.
 //
 // The name and length of the file should NOT be revealed to the datastore!
@@ -375,7 +313,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	//NEED: confidentiality and integrity guarantees
 	//different users should be allowed to use the same filename
 	//without interfering with each other
-  // create FileMetaData object
+	// create FileMetaData object
 	var fileMetaData FileMetaData
 
 	// FileMetaData.FileUUID = generate random uuid for file and appendByte
