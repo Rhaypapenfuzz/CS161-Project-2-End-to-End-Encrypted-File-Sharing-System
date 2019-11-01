@@ -481,6 +481,11 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	signedEncryptedFileMetaDataMarshalled, _ := json.Marshal(signedEncryptedFileMetaData)
 	userlib.DatastoreSet(metaUUID, signedEncryptedFileMetaDataMarshalled)
 
+	dSMetaDataVerifyKey, _ := userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+	metaDataKeyStr := metaUUID.String()
+	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+	userlib.KeystoreSet(metaDataKeyStr, dSMetaDataVerifyKey)
+
 	//if generating new digital for each file then follow this step
 	// KeyStoreSet(usernameFilenameDSVerifyKey: FileDSVerifyKey)
 
@@ -557,8 +562,10 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	signature := signedEncryptedFileMetaData.Signature
 	//get encryptedFileMetaData
 	encryptedFileMetaData := signedEncryptedFileMetaData.Data
-	//check if fileMetadata is authentic and for integrity
-	dSVerifyKey, ok := userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+	//check if fileMetadata is authentic and for integrit
+	metaDataKeyStr := metaUUID.String()
+	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+	dSVerifyKey, ok := userlib.KeystoreGet(metaDataKeyStr)
 	if ok == false { //if key doesn't exist in keystore
 		return nil, err //return empty data and nil
 	}
@@ -737,7 +744,9 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//get encryptedFileMetaData
 	encryptedFileMetaData = signedEncryptedFileMetaData.Data
 	//check if fileMetadata is authentic and for integrity
-	dSVerifyKey, ok := userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+	metaDataKeyStr := metaUUID.String()
+	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+	dSVerifyKey, ok := userlib.KeystoreGet(metaDataKeyStr)
 	if ok == false { //if key doesn't exist in keystore
 		return err //return error
 	}
@@ -881,6 +890,14 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	newSignedEncryptedFileMetaData.Data = encryptedFileMetaData
 	newSignedEncryptedFileMetaData.Signature = encryptedFileMetaDataSignature
 	signedEncryptedFileMetaDataMarshalled, _ := json.Marshal(newSignedEncryptedFileMetaData)
+
+	dSVerifyKey, ok = userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+	if ok == false { //if key doesn't exist in keystore
+		return err //return error
+	}
+	metaDataKeyStr = metaUUID.String()
+	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+	userlib.KeystoreSet(metaDataKeyStr, dSVerifyKey)
 	userlib.DatastoreSet(metaUUID, signedEncryptedFileMetaDataMarshalled)
 
 	//Upload userData
@@ -959,7 +976,9 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	//get encryptedFileMetaData
 	encryptedFileMetaData := signedEncryptedFileMetaData.Data
 	//check if fileMetadata is authentic and for integrity
-	dSVerifyKey, ok := userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+	metaDataKeyStr := metaUUID.String()
+	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+	dSVerifyKey, ok := userlib.KeystoreGet(metaDataKeyStr)
 	if ok == false { //if key doesn't exist in keystore
 		return emptyString, err //return empty data and nil
 	}
@@ -1069,6 +1088,32 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 
 	decryptedFileMetaData.SharedMetaDataUUIDsMap[recipient] = recipientMetaUUID
 
+	//UPLOAD NEW METADATA
+	// marshal encryptFileMetaData
+	fileMetaDataMarshalled, _ := json.Marshal(decryptedFileMetaData)
+	//generate random iv
+	randomIV := userlib.RandomBytes(16)
+	//get user's FileMetaData symmetric encryption key
+	symmetricKey = userdata.FileMetaDataKeys[filename]
+	//encrypt fileMetaData
+	encryptedFileMetaData = userlib.SymEnc(symmetricKey, randomIV, fileMetaDataMarshalled)
+
+	//sign encryptedFileMetaData with private digital signature key
+	encryptedFileMetaDataSignature, _ := userlib.DSSign(dSSignKey, encryptedFileMetaData)
+	var newSignedEncryptedFileMetaData DSSignedData
+	newSignedEncryptedFileMetaData.Data = encryptedFileMetaData
+	newSignedEncryptedFileMetaData.Signature = encryptedFileMetaDataSignature
+	signedEncryptedFileMetaDataMarshalled, _ = json.Marshal(newSignedEncryptedFileMetaData)
+	dSVerifyKey, ok = userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+	if ok == false { //if key doesn't exist in keystore
+		return emptyString, err //return nil and error
+	}
+	metaDataKeyStr = metaUUID.String()
+	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+	userlib.KeystoreSet(metaDataKeyStr, dSVerifyKey)
+	userlib.DatastoreSet(metaUUID, signedEncryptedFileMetaDataMarshalled)
+
+	//share magic string
 	return magicString, nil
 }
 
@@ -1168,6 +1213,14 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	signedEncryptedFileMetaData.Data = encryptedFileMetaData
 	signedEncryptedFileMetaData.Signature = encryptedFileMetaDataSignature
 	signedEncryptedFileMetaDataMarshalled, _ := json.Marshal(signedEncryptedFileMetaData)
+
+	dSVerifyKey, ok = userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+	if ok == false { //if key doesn't exist in keystore
+		return err //return error
+	}
+	metaDataKeyStr := metaUUID.String()
+	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+	userlib.KeystoreSet(metaDataKeyStr, dSVerifyKey)
 	userlib.DatastoreSet(metaUUID, signedEncryptedFileMetaDataMarshalled)
 
 	//UPLOAD USER DATA
@@ -1233,7 +1286,9 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	//get encryptedFileMetaData
 	encryptedFileMetaData := signedEncryptedFileMetaData.Data
 	//check if fileMetadata is authentic and for integrity
-	dSVerifyKey, ok := userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+	metaDataKeyStr := metaUUID.String()
+	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+	dSVerifyKey, ok := userlib.KeystoreGet(metaDataKeyStr)
 	if ok == false { //if key doesn't exist in keystore
 		return err //return error
 	}
@@ -1405,7 +1460,7 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 
 	userlib.DatastoreSet(fileUUIDArrayUUID, signedEncryptedFileUUIDArrayMarshalledMarshalled)
 
-	//for all users left in SharedMetaDataSymmetricKeysMap
+	//for all users left in SharedMetaDataSymmetricKeysMap, give them the updated file info
 	err = userdata.RecursiveShareNewFileMetaData(decryptedFileMetaData, fileUUIDArrayUUID, decryptedFileMetaData.FileSymmetricKey)
 	if err != nil {
 		return err
@@ -1422,6 +1477,13 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 
 	//METADATA INTEGRITY STEP
 	encryptedFileMetaDataSignature, _ := userlib.DSSign(userdata.DSSignKey, newEncryptedFileMetaData)
+	dSVerifyKey, ok = userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+	if ok == false { //if key doesn't exist in keystore
+		return err //return error
+	}
+	metaDataKeyStr = metaUUID.String()
+	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+	userlib.KeystoreSet(metaDataKeyStr, dSVerifyKey)
 	var newSignedEncryptedFileMetaData DSSignedData
 	newSignedEncryptedFileMetaData.Data = newEncryptedFileMetaData
 	newSignedEncryptedFileMetaData.Signature = encryptedFileMetaDataSignature
@@ -1461,10 +1523,12 @@ type FileMetaData struct {
 	SharedMetaDataUUIDsMap         map[string]uuid.UUID
 }
 
-func (userdata *User) RecursiveShareNewFileMetaData(ownerFileMetaData FileMetaData, newFileUUIDArrayUUID uuid.UUID, newFileSymmetricKey []byte) (err error) {
+func (userdata *User) RecursiveShareNewFileMetaData(userFileMetaData FileMetaData, newFileUUIDArrayUUID uuid.UUID, newFileSymmetricKey []byte) (err error) {
 	/////THIS FUNCTION MUST CHANGE TO A RECURSIVE ONE
-
-	for username, metaUUID := range ownerFileMetaData.SharedMetaDataUUIDsMap {
+	if len(userFileMetaData.SharedMetaDataUUIDsMap) == 0 { //if map is empty, that is no shared user exist
+		return nil
+	}
+	for username, metaUUID := range userFileMetaData.SharedMetaDataUUIDsMap {
 		//retrieve users metadata from Datastore
 		//get metaData, check integrity, decrypt it
 		signedEncryptedFileMetaDataMarshalled, ok := userlib.DatastoreGet(metaUUID)
@@ -1481,8 +1545,12 @@ func (userdata *User) RecursiveShareNewFileMetaData(ownerFileMetaData FileMetaDa
 		signature := signedEncryptedFileMetaData.Signature
 		//get encryptedFileMetaData
 		encryptedFileMetaData := signedEncryptedFileMetaData.Data
+
+		metaDataKeyStr := metaUUID.String()
+		metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+
 		//check if fileMetadata is authentic and for integrity
-		dSVerifyKey, ok := userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+		dSVerifyKey, ok := userlib.KeystoreGet(metaDataKeyStr)
 		if ok == false { //if key doesn't exist in keystore
 			return err //return error
 		}
@@ -1491,7 +1559,7 @@ func (userdata *User) RecursiveShareNewFileMetaData(ownerFileMetaData FileMetaDa
 			return err //return error
 		}
 		//decrypt encryptedFileMetaData with our symmetric key for this file
-		symmetricKey, found := ownerFileMetaData.SharedMetaDataSymmetricKeysMap[username]
+		symmetricKey, found := userFileMetaData.SharedMetaDataSymmetricKeysMap[username]
 		if found == false { //	if filename doesn’t exist abort
 			return err
 		}
@@ -1503,6 +1571,9 @@ func (userdata *User) RecursiveShareNewFileMetaData(ownerFileMetaData FileMetaDa
 		if err != nil { //if unable to marshall
 			return err //return error
 		}
+
+		userdata.RecursiveShareNewFileMetaData(decryptedFileMetaData, newFileUUIDArrayUUID, newFileSymmetricKey)
+
 		//Now make new changes
 		decryptedFileMetaData.FileUUIDArrayUUID = newFileUUIDArrayUUID
 		decryptedFileMetaData.FileSymmetricKey = newFileSymmetricKey
@@ -1519,6 +1590,13 @@ func (userdata *User) RecursiveShareNewFileMetaData(ownerFileMetaData FileMetaDa
 
 		//METADATA INTEGRITY STEP
 		encryptedFileMetaDataSignature, _ := userlib.DSSign(userdata.DSSignKey, newEncryptedFileMetaData)
+		dSVerifyKey, ok = userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
+		if ok == false { //if key doesn't exist in keystore
+			return err //return error
+		}
+		metaDataKeyStr = metaUUID.String()
+		metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
+		userlib.KeystoreSet(metaDataKeyStr, dSVerifyKey)
 		var newSignedEncryptedFileMetaData DSSignedData
 		newSignedEncryptedFileMetaData.Data = newEncryptedFileMetaData
 		newSignedEncryptedFileMetaData.Signature = encryptedFileMetaDataSignature
