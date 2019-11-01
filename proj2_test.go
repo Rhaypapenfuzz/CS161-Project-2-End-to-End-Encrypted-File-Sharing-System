@@ -898,6 +898,30 @@ func TestShareThreeUsers(t *testing.T) {
 		t.Error("File shareing failed with Yoshi", err)
 		return
 	}
+
+	err = SharedRecipientAppend(u3, u2, "sharedFile3U", "sharedFile3U", "yoshi", "bob")
+	if err != nil {
+		t.Error("Bob updated file but Yoshi does not see changes", err)
+		return
+	}
+
+	err = SharedOwnerAppend(u3, u2, "sharedFile3U", "sharedFile3U", "yoshi", "bob")
+	if err != nil {
+		t.Error("Yoshi updated file but Bob does not see changes", err)
+		return
+	}
+
+	err = SharedRecipientStore(u3, u2, "sharedFile3U", "sharedFile3U", "yoshi", "bob")
+	if err != nil {
+		t.Error("Bob stored new fiel but Yoshi does not see changes", err)
+		return
+	}
+
+	err = SharedOwnerStore(u3, u2, "sharedFile3U", "sharedFile3U", "yoshi", "bob")
+	if err != nil {
+		t.Error("Yoshi stored new file but Bob does not see changes", err)
+		return
+	}
 }
 
 func TestRevokeOwnerAppend(t *testing.T) {
