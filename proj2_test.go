@@ -680,12 +680,12 @@ func TestReceiveDupMagic(t *testing.T) {
 
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
-		t.Error("Failed to reload user", err, u)
+		t.Error("failed to reload user", err, u)
 		return
 	}
 	u2, err2 := GetUser("bob", "foobar")
 	if err2 != nil {
-		t.Error("Failed to initialize bob", err2)
+		t.Error("failed to initialize bob", err2)
 		return
 	}
 
@@ -717,6 +717,42 @@ func TestReceiveDupMagic(t *testing.T) {
 
 }
 
+func TestShareLoadDifFile(t *testing.T) {
+	var bobFile, aliceFile []byte
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("failed to reload user", err, u)
+		return
+	}
+	u2, err2 := GetUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("failed to initialize bob", err2)
+		return
+	}
+
+	u.StoreFile("tryToGetThis", []byte("Bob will try to access this file even though he was shared a different file"))
+	u.StoreFile("fileForBob", []byte("Alice will give this file to Bob"))
+
+	err = SetSharedFile(u, u2, "fileForBob", "fileForBob2", "alice", "bob")
+
+	bobFile, err = u2.LoadFile("tryToGetThis")
+	if err == nil {
+		t.Error("loaded alice's other file")
+		return
+	}
+
+	aliceFile, err = u.LoadFile("tryToGetThis")
+	if err != nil {
+		t.Error("failed to load bob's file")
+		return
+	}
+
+	if reflect.DeepEqual(bobFile, aliceFile) {
+		t.Error("Bob got alice's other file")
+		return
+	}
+
+}
 func TestShareAppend(t *testing.T) {
 	var sharedFile []byte
 	sharedFile = []byte("Bob and Alice share this file 1 to test append")
