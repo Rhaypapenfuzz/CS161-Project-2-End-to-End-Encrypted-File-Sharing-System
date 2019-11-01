@@ -8,15 +8,16 @@ import (
 	_ "encoding/json"
 	"errors"
 	"github.com/cs161-staff/userlib"
-	"github.com/google/uuid"
+	_ "github.com/google/uuid"
 	"reflect"
 	_ "strconv"
 	_ "strings"
 	"testing"
 )
 
-//
+// Helper Functions
 
+/** Resets Datastore to same state after TestInit. **/
 func ResetDatastore() {
 	userlib.DatastoreClear()
 	userlib.KeystoreClear()
@@ -34,7 +35,8 @@ func ResetDatastore() {
 	return
 }
 
-func ResetSharedFile(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
+/** Shares a file between user u and user u2 and returns first error. **/
+func SetSharedFile(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
 
 	var file2 []byte
 	var magic_string string
@@ -64,6 +66,238 @@ func ResetSharedFile(u *User, u2 *User, fn1 string, fn2 string, un string, u2n s
 	return nil
 }
 
+/** After user u revokes access for user u2, checks that u2 can no longer see appends. **/
+func RevokedOwnerAppend(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
+	var ownerFile, recipFile, appendData []byte
+	appendData = []byte("Owner will attempt to append this data, but recipient should not see it")
+
+	err := u.AppendFile(fn1, appendData)
+	if err != nil {
+		userlib.DebugMsg("AppendFile failed for owner")
+		return err
+	}
+
+	// This may or may not cause error depending on implementation
+	recipFile, err = u2.LoadFile(fn2)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for recipient")
+	}
+
+	ownerFile, err = u.LoadFile(fn1)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for owner")
+		return err
+	}
+
+	// Files should NOT be equal
+	if reflect.DeepEqual(ownerFile, recipFile) {
+		return errors.New("File access was NOT denied")
+	}
+
+	return nil
+}
+
+/** After user u revokes access for user u2, checks that u2 can no longer see stores. **/
+func RevokedOwnerStore(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
+	var ownerFile, storeData []byte
+	storeData = []byte("Owner will attempt to store this data, but recipient should not be able to access it")
+
+	u.StoreFile(fn1, storeData)
+
+	// May or may not return error depending on implementatin
+	recipFile, err := u2.LoadFile(fn2)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for recipient")
+	}
+
+	ownerFile, err = u.LoadFile(fn1)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for owner")
+		return err
+	}
+
+	// Files should NOT be equal
+	if !reflect.DeepEqual(ownerFile, recipFile) {
+		return errors.New("File access was NOT denied")
+	}
+
+	return nil
+}
+
+/** After user u revokes access for user u2, checks that u2 can no longer append file. **/
+func RevokedRecipientAppend(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
+	var ownerFile, recipFile, appendData []byte
+	appendData = []byte("Recipient will attempt to append this data, but should not affect owner's file")
+
+	// May or may not return error depending on implementation
+	err := u2.AppendFile(fn2, appendData)
+	if err != nil {
+		userlib.DebugMsg("AppendFile failed for recipient")
+	}
+
+	// May or may not return error depending on implementation
+	recipFile, err = u2.LoadFile(fn2)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for recipient")
+	}
+
+	ownerFile, err = u.LoadFile(fn1)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for owner")
+		return err
+	}
+
+	// Files should NOT be equal
+	if reflect.DeepEqual(ownerFile, recipFile) {
+		return errors.New("File access was NOT denied")
+	}
+
+	return nil
+}
+
+/** After user u revokes access for user u2, checks that u2 can no longer overwrite file. **/
+func RevokedRecipientStore(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
+	var ownerFile, storeData []byte
+	storeData = []byte("Recipient will attempt to store this data, but it should not overwrite owner's data")
+
+	u2.StoreFile(fn2, storeData)
+
+	// May or may not return error depending on implementation
+	recipFile, err := u2.LoadFile(fn2)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for recipient")
+	}
+
+	ownerFile, err = u.LoadFile(fn1)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for owner")
+		return err
+	}
+
+	// Files should NOT be equal
+	if !reflect.DeepEqual(ownerFile, recipFile) {
+		return errors.New("File access was NOT denied")
+	}
+
+	return nil
+}
+
+/** After user u gives access for user u2, checks that u2 CAN SEE overwrites to file. **/
+func SharedOwnerAppend(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
+	var ownerFile, recipFile, appendData []byte
+	appendData = []byte("Owner will attempt to append this data")
+
+	err := u.AppendFile(fn1, appendData)
+	if err != nil {
+		userlib.DebugMsg("AppendFile failed for owner")
+		return err
+	}
+
+	recipFile, err = u2.LoadFile(fn2)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for recipient")
+		return err
+	}
+
+	ownerFile, err = u.LoadFile(fn1)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for owner")
+		return err
+	}
+
+	// Files should be equal
+	if !reflect.DeepEqual(ownerFile, recipFile) {
+		return errors.New("Files fail DeepEqual")
+	}
+
+	return nil
+}
+
+/** After user u gives access to user u2, checks that u2 CAN SEE appends to file. **/
+func SharedOwnerStore(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
+	var ownerFile, storeData []byte
+	storeData = []byte("Owner will attempt to store this data")
+
+	u.StoreFile(fn1, storeData)
+
+	recipFile, err := u2.LoadFile(fn2)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for recipient")
+		return err
+	}
+
+	ownerFile, err = u.LoadFile(fn1)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for owner")
+		return err
+	}
+
+	// Files should be equal
+	if !reflect.DeepEqual(ownerFile, recipFile) {
+		return errors.New("Files fail DeepEqual")
+	}
+
+	return nil
+}
+
+/** After user u gives access to user u2, checks that u2 CAN MAKE appends to file. **/
+func SharedRecipientAppend(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
+	var ownerFile, recipFile, appendData []byte
+	appendData = []byte("Recipient will attempt to append this data")
+
+	err := u2.AppendFile(fn2, appendData)
+	if err != nil {
+		userlib.DebugMsg("AppendFile failed for recipient")
+		return err
+	}
+
+	recipFile, err = u2.LoadFile(fn2)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for recipient")
+		return err
+	}
+
+	ownerFile, err = u.LoadFile(fn1)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for owner")
+		return err
+	}
+
+	// Files should be equal
+	if !reflect.DeepEqual(ownerFile, recipFile) {
+		return errors.New("Files fail DeepEqual")
+	}
+
+	return nil
+}
+
+/** After user u gives access to user u2, checks that u2 CAN MAKE overwrites to file. **/
+func SharedRecipientStore(u *User, u2 *User, fn1 string, fn2 string, un string, u2n string) error {
+	var ownerFile, storeData []byte
+	storeData = []byte("Recipient will attempt to store this data")
+
+	u2.StoreFile(fn2, storeData)
+
+	recipFile, err := u2.LoadFile(fn2)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for recipient")
+		return err
+	}
+
+	ownerFile, err = u.LoadFile(fn1)
+	if err != nil {
+		userlib.DebugMsg("LoadFile failed for owner")
+		return err
+	}
+
+	// Files should be equal
+	if !reflect.DeepEqual(ownerFile, recipFile) {
+		return errors.New("Files fail DeepEqual")
+	}
+
+	return nil
+}
+
 func TestInit(t *testing.T) {
 	t.Log("Initialization test")
 
@@ -82,20 +316,6 @@ func TestInit(t *testing.T) {
 	// If you want to comment the line above,
 	// write _ = u here to make the compiler happy
 	// You probably want many more tests here.
-}
-
-type TestUser struct {
-	ut *User
-}
-
-func (t *TestUser) StoreFile(filename string, data []byte) {
-	userlib.DebugMsg("overwrote storefile")
-	t.ut.StoreFile(filename, data)
-}
-
-func DatastoreGet(uuid uuid.UUID) {
-	userlib.DebugMsg("DatstoreGet overwrite")
-	userlib.DatastoreGet(uuid)
 }
 
 // Single User Functionality
@@ -384,8 +604,7 @@ func TestModifiedUser(t *testing.T) {
 	ResetDatastore()
 }
 
-// Multi-User functionality
-
+/** Skeleton code test left unchanged. **/
 func TestShare(t *testing.T) {
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
@@ -431,179 +650,161 @@ func TestShare(t *testing.T) {
 }
 
 func TestShareAppend(t *testing.T) {
-	var aliceFile, bobFile, appendData []byte
+	var sharedFile []byte
+	sharedFile = []byte("Bob and Alice share this file 1 to test append")
 
-	appendData = []byte("more data to append")
-
+	// Get user alice
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to reload user", err)
 		return
 	}
 
+	// Get user bob
 	u2, err2 := GetUser("bob", "foobar")
 	if err2 != nil {
 		t.Error("Failed to reload user", err2)
 		return
 	}
 
-	err2 = u2.AppendFile("file2", appendData)
-	if err2 != nil {
-		t.Error("AppendFile failed", err2)
-	}
-
-	bobFile, err2 = u2.LoadFile("file2")
-	if err2 != nil {
-		t.Error("Failed to download file after append", err2)
-		return
-	}
-
-	aliceFile, err = u.LoadFile("file1")
+	// Alice stores new shared file
+	u.StoreFile("sharedFile1a", sharedFile)
+	_, err = u.LoadFile("sharedFile1a")
 	if err != nil {
-		t.Error("Failed to download shared file after other user appends", err)
+		t.Error("File upload or download failed", err)
 		return
 	}
 
-	// files should be equal
-	if !reflect.DeepEqual(aliceFile, bobFile) {
-		t.Error("Shared file is not the same among users")
+	// Alice shares new file with Bob
+	err = SetSharedFile(u, u2, "sharedFile1a", "sharedFile1b", "alice", "bob")
+	if err != nil {
+		t.Error("Sharing file failed", err)
+		return
+	}
+
+	// Alice appends file
+	err = SharedOwnerAppend(u, u2, "sharedFile1a", "sharedFile1b", "alice", "bob")
+	if err != nil {
+		t.Error("Sharing file fails when Alice appends", err)
+		return
+	}
+
+	// Bob appends file
+	err = SharedRecipientAppend(u, u2, "sharedFile1a", "sharedFile1b", "alice", "bob")
+	if err != nil {
+		t.Error("Sharing file fails when Bob appends", err)
 		return
 	}
 }
 
-func TestShareOverwrite(t *testing.T) {
+func TestShareStore(t *testing.T) {
+	var sharedFile []byte
+	sharedFile = []byte("Bob and Alice share this file 2 to test store")
 
-	var aliceFile, bobFile, newData []byte
-
-	newData = []byte("this is new data to put on the file")
-
+	// Get user alice
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to reload user", err)
 		return
 	}
 
+	// Get user bob
 	u2, err2 := GetUser("bob", "foobar")
 	if err2 != nil {
 		t.Error("Failed to reload user", err2)
 		return
 	}
 
-	u2.StoreFile("file2", newData)
-
-	bobFile, err2 = u2.LoadFile("file2")
-	if err2 != nil {
-		t.Error("Failed to download file after store", err2)
-		return
-	}
-
-	aliceFile, err = u.LoadFile("file1")
+	// Alice stores new shared file
+	u.StoreFile("sharedFile2a", sharedFile)
+	_, err = u.LoadFile("sharedFile1a")
 	if err != nil {
-		t.Error("Failed to download shared file after other user stores", err)
+		t.Error("File upload or download failed", err)
 		return
 	}
 
-	//files should equal newData
-	if !reflect.DeepEqual(aliceFile, newData) {
-		t.Error("Shared file was not updated for Alice")
+	// Alice shares new file with Bob
+	err = SetSharedFile(u, u2, "sharedFile2a", "sharedFile2b", "alice", "bob")
+	if err != nil {
+		t.Error("Sharing file failed", err)
 		return
 	}
 
-	// files should be equal
-	if !reflect.DeepEqual(aliceFile, bobFile) {
-		t.Error("Shared file is not the same among users")
+	// Alice stores new data in file
+	err = SharedOwnerStore(u, u2, "sharedFile2a", "sharedFile2b", "alice", "bob")
+	if err != nil {
+		t.Error("Sharing file fails when Alice stores", err)
 		return
 	}
+
+	// Bob stores new data in file
+	err = SharedRecipientStore(u, u2, "sharedFile2a", "sharedFile2b", "alice", "bob")
+	if err != nil {
+		t.Error("Sharing file fails when Bob stores", err)
+		return
+	}
+
 }
 
 func TestShareThreeUsers(t *testing.T) {
-	var aliceFile, bobFile, yoshiFile, sharedFile []byte
+	var sharedFile []byte
+
+	// Create new file to share
 	sharedFile = []byte("three users can share this file")
 
+	// Get users Alice
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to reload user", err)
 		return
 	}
 
+	// Get user Bob
 	u2, err2 := GetUser("bob", "foobar")
 	if err2 != nil {
 		t.Error("Failed to reload user", err2)
 		return
 	}
 
+	// Initialize user Yoshi
 	u3, err3 := InitUser("yoshi", "spottedegg")
 	if err3 != nil {
 		t.Error("Failed to initialize user", u3)
 		return
 	}
 
-	var magic_string string
-
-	u.StoreFile("shared3", sharedFile)
-
-	aliceFile, err = u.LoadFile("shared3")
+	// Alice stores new file
+	u.StoreFile("sharedFile3U", sharedFile)
+	_, err = u.LoadFile("sharedFile3U")
 	if err != nil {
-		t.Error("Failed to download the file from alice", err)
+		t.Error("File upload or download failed", err)
 		return
 	}
 
-	// share file with bob
-	magic_string, err = u.ShareFile("sharedd", "bob")
+	// Alice shares file with Bob
+	err = SetSharedFile(u, u2, "sharedFile3U", "sharedFile3U", "alice", "bob")
 	if err != nil {
-		t.Error("Failed to share the file with bob", err)
+		t.Error("File shareing failed with Bob", err)
 		return
 	}
-	err = u2.ReceiveFile("shared3bob", "alice", magic_string)
+
+	//Alice shares file with Yoshi
+	err = SetSharedFile(u, u3, "sharedFile3U", "sharedFile3U", "alice", "yoshi")
 	if err != nil {
-		t.Error("Bob failed to receive the shared message", err)
-		return
-	}
-
-	// share file with yoshi
-	magic_string, err = u.ShareFile("shared3", "yoshi")
-	if err != nil {
-		t.Error("Failed to share the a file with yoshi", err)
-		return
-	}
-	err = u3.ReceiveFile("shared3yoshi", "alice", magic_string)
-	if err != nil {
-		t.Error("Yoshi failed to receive the shared message", err)
-		return
-	}
-
-	bobFile, err = u2.LoadFile("shared3bob")
-	if err != nil {
-		t.Error("Failed to download the file after sharing", err)
-		return
-	}
-
-	yoshiFile, err = u3.LoadFile("shared3yoshi")
-	if err != nil {
-		t.Error("Failed to download the file after sharing", err)
-		return
-	}
-
-	if !reflect.DeepEqual(aliceFile, sharedFile) {
-		t.Error("Alice does not have shared file", sharedFile, aliceFile)
-		return
-	}
-
-	if !reflect.DeepEqual(yoshiFile, sharedFile) {
-		t.Error("Yoshi does not have shared file", sharedFile, yoshiFile)
-		return
-	}
-
-	if !reflect.DeepEqual(bobFile, sharedFile) {
-		t.Error("Bob does not have shared file", sharedFile, bobFile)
+		t.Error("File shareing failed with Yoshi", err)
 		return
 	}
 }
 
 func TestRevokeOwnerAppend(t *testing.T) {
-	var file1, file2 []byte
 
 	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	u2, err := GetUser("bob", "foobar")
 	if err != nil {
 		t.Error("Failed to reload user", err)
 		return
@@ -615,34 +816,14 @@ func TestRevokeOwnerAppend(t *testing.T) {
 		return
 	}
 
-	err = u.AppendFile("file1", []byte("Bob shouldn't see this"))
+	err = RevokedOwnerAppend(u, u2, "sharedFile1a", "sharedFile1b", "alice", "bob")
 	if err != nil {
-		t.Error("AppendFile failed for owner", err)
-		return
-	}
-
-	u2, err := GetUser("bob", "foobar")
-	if err != nil {
-		t.Error("Failed to reload user", err)
-		return
-	}
-
-	file1, err = u.LoadFile("file1")
-	if err != nil {
-		t.Error("Failed to download file for owner", err)
-		return
-	}
-
-	file2, err = u2.LoadFile("file2")
-
-	if reflect.DeepEqual(file2, file1) {
-		t.Error("Bob saw updated version of Alice's file after AppendFile", file1, file2)
+		t.Error("Alice's revoke failed to hide access from Bob", err)
 		return
 	}
 }
 
 func TestRevokeOwnerStore(t *testing.T) {
-	var file1, file2 []byte
 
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
@@ -656,55 +837,277 @@ func TestRevokeOwnerStore(t *testing.T) {
 		return
 	}
 
-	// Share file with Bob again
-	err = ResetSharedFile(u, u2, "file1", "file2", "alice", "bob")
+	err = RevokedOwnerStore(u, u2, "sharedFile1a", "sharedFile1b", "alice", "bob")
 	if err != nil {
-		t.Error("Shared file failed", err)
-	}
-
-	// Revoke Bob's file then store new file
-	err = u.RevokeFile("file1", "bob")
-	if err != nil {
-		t.Error("Revoke file failed", err)
-		return
-	}
-
-	u.StoreFile("file1", []byte("New data that Bob still shouldn't see"))
-
-	file1, err = u.LoadFile("file1")
-	if err != nil {
-		t.Error("Failed to download file for owner after StoreFile", err)
-		return
-	}
-
-	file2, err = u2.LoadFile("file2")
-
-	if reflect.DeepEqual(file2, file1) {
-		t.Error("Bob saw updated version of Alice's file after StoreFile", file1, file2)
+		t.Error("Alice's revoke failed to hide access from Bob", err)
 		return
 	}
 }
 
 func TestRevokeRecipientAppend(t *testing.T) {
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	u2, err := GetUser("bob", "foobar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	err = RevokedRecipientAppend(u, u2, "sharedFile1a", "sharedFile1b", "alice", "bob")
+	if err != nil {
+		t.Error("Alice's revoke failed to prevent updates from Bob", err)
+		return
+	}
 }
 
 func TestRecipientStore(t *testing.T) {
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	u2, err := GetUser("bob", "foobar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	err = RevokedRecipientStore(u, u2, "sharedFile1a", "sharedFile1b", "alice", "bob")
+	if err != nil {
+		t.Error("Alice's revoke failed to prevent updates from Bob", err)
+		return
+	}
 }
 
 func TestRevokeThreeUsers(t *testing.T) {
+	var sharedFile, bobFile []byte
+
+	// New file to share
+	sharedFile = []byte("Alice wants to share this file with her friends Bob and Yoshi")
+
+	// Get user Alice
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	// Get user Bob
+	u2, err2 := GetUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to reload user", err2)
+		return
+	}
+
+	// Get user Yoshi
+	u3, err3 := GetUser("yoshi", "spottedegg")
+	if err3 != nil {
+		t.Error("Failed to reload user", err3)
+		return
+	}
+
+	// Store new file
+	u.StoreFile("sharedFile3U2", sharedFile)
+	_, err = u.LoadFile("sharedFile3U2")
+	if err != nil {
+		t.Error("Failed to upload or download sharedFile3U2", err)
+	}
+
+	// Share file with Bob
+	err = SetSharedFile(u, u2, "sharedFile3U2", "sharedFile3U2", "alice", "bob")
+	if err != nil {
+		t.Error("Shared file failed", err)
+	}
+
+	// Share file with Yoshi
+	err = SetSharedFile(u, u3, "sharedFile3U2", "sharedFile3U2", "alice", "yoshi")
+	if err != nil {
+		t.Error("Shared file failed", err)
+	}
+
+	// Revoke Bob's access
+	err = u.RevokeFile("sharedFile3U2", "bob")
+	if err != nil {
+		t.Error("Revoke file failed", err)
+		return
+	}
+
+	// Bob tries to append data
+	err = RevokedRecipientAppend(u, u2, "sharedFile3U2", "sharedFile3U2", "alice", "bob")
+	if err != nil {
+		t.Error("Alice's revoke failed to prevent updates from Bob", err)
+		return
+	}
+
+	// Yoshi attempts to append data
+	err = SharedRecipientAppend(u, u3, "sharedFile3U2", "sharedFile3U2", "alice", "yoshi")
+	if err != nil {
+		t.Error("Yoshi was unable update Alice's file", err)
+		return
+	}
+
+	// Check to see that Yoshi's updates are hidden from Bob
+	sharedFile, err = u3.LoadFile("sharedFile3U2")
+	if err != nil {
+		t.Error("File download failed", err)
+		return
+	}
+
+	bobFile, err = u2.LoadFile("sharedFile3U2")
+	if reflect.DeepEqual(bobFile, sharedFile) {
+		t.Error("Bob was able to see changes after yoshi", bobFile, sharedFile)
+		return
+	}
+
+	// Alice tries to append Data
+	err = SharedOwnerAppend(u, u3, "sharedFile3U2", "sharedFile3U2", "alice", "yoshi")
+	if err != nil {
+		t.Error("Alice is unable to append to her file", err)
+		return
+	}
+
+	// Check that Bob can't see Alice's updates
+	sharedFile, err = u3.LoadFile("sharedFile3U2")
+	if err != nil {
+		t.Error("File download failed", err)
+		return
+	}
+
+	bobFile, err = u2.LoadFile("sharedFile3U2")
+	if reflect.DeepEqual(bobFile, sharedFile) {
+		t.Error("Bob was able to see changes after yoshi", bobFile, sharedFile)
+		return
+	}
+
 }
 
 // Test with children
 
 func TestShareChild(t *testing.T) {
+	var sharedFile []byte
+
+	sharedFile = []byte("Alice creates a new file that she will send to Bob. Then Bob will send file Bob Jr.")
+
+	// Get users Alice
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	// Get user Bob
+	u2, err2 := GetUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to reload user", err2)
+		return
+	}
+
+	// Initialize user Bob Jr.
+	u3, err3 := InitUser("bobJr", "babyfoobar")
+	if err3 != nil {
+		t.Error("Failed to initialize user", u3)
+		return
+	}
+
+	// Alice stores new file
+	u.StoreFile("sharedFileC", sharedFile)
+
+	// Alice shares file with Bob
+	err = SetSharedFile(u, u2, "sharedFileC", "sharedFileC", "alice", "bob")
+	if err != nil {
+		t.Error("File sharing failed with Bob", err)
+		return
+	}
+
+	// Bob shared file with Bob Jr.
+	err = SetSharedFile(u2, u3, "sharedFileC", "sharedFileC", "bob", "bobJr")
+	if err != nil {
+		t.Error("File sharing failed with Bob Jr.", err)
+		return
+	}
+
+	// Check that Bob Jr. CAN append
+	err = SharedRecipientAppend(u, u3, "sharedFileC", "sharedFileC", "alice", "bobJr")
+	if err != nil {
+		t.Error("Bob Jr. does not have access to append Alice's file")
+		return
+	}
+
+	// Check that Bob Jr. CAN store
+	err = SharedRecipientStore(u, u3, "sharedFileC", "sharedFileC", "alice", "bobJr")
+	if err != nil {
+		t.Error("Bob Jr. does not have access to append Alice's file")
+		return
+	}
+
+	// Check that Bob Jr. CAN see Alice's append
+	err = SharedOwnerAppend(u, u3, "sharedFileC", "sharedFileC", "alice", "bobJr")
+	if err != nil {
+		t.Error("Bob Jr. still does not have access to append Alice's file")
+		return
+	}
+
+	// Check that Bob Jr. cannot see ALice's store
+	err = SharedOwnerStore(u, u3, "sharedFileC", "sharedFileC", "alice", "bobJr")
+	if err != nil {
+		t.Error("Bob Jr. does not have access to store to Alice's file")
+		return
+	}
 }
 
 func TestRevokeChild(t *testing.T) {
-}
 
-// Test with children and siblings
+	// Get users Alice
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
 
-func TestRevokeChildSibling(t *testing.T) {
+	// Get user Bob Jr.
+	u3, err3 := GetUser("bobJr", "babyfoobar")
+	if err3 != nil {
+		t.Error("Failed to initialize user", u3)
+		return
+	}
+
+	// Alice revokes Bob's access, which revokes Bob Jr.'s access
+	u.RevokeFile("sharedFileC", "bob")
+
+	// Check that Bob Jr. cannot append
+	err = RevokedRecipientAppend(u, u3, "sharedFileC", "sharedFileC", "alice", "bobJr")
+	if err != nil {
+		t.Error("Bob Jr. still has access to append Alice's file")
+		return
+	}
+
+	// Check that Bob Jr. cannot store
+	err = RevokedRecipientStore(u, u3, "sharedFileC", "sharedFileC", "alice", "bobJr")
+	if err != nil {
+		t.Error("Bob Jr. still has access to append Alice's file")
+		return
+	}
+
+	// Check that Bob Jr. cannot see Alice's append
+	err = RevokedOwnerAppend(u, u3, "sharedFileC", "sharedFileC", "alice", "bobJr")
+	if err != nil {
+		t.Error("Bob Jr. still has access to append Alice's file")
+		return
+	}
+
+	// Check that Bob Jr. cannot see ALice's store
+	err = RevokedOwnerStore(u, u3, "sharedFileC", "sharedFileC", "alice", "bobJr")
+	if err != nil {
+		t.Error("Bob Jr. still has access to store to Alice's file")
+		return
+	}
 }
 
 // Multi-user Integrity Test
