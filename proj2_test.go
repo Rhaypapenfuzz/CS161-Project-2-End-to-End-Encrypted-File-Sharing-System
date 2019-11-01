@@ -117,7 +117,7 @@ func RevokedOwnerStore(u *User, u2 *User, fn1 string, fn2 string, un string, u2n
 	}
 
 	// Files should NOT be equal
-	if !reflect.DeepEqual(ownerFile, recipFile) {
+	if reflect.DeepEqual(ownerFile, recipFile) {
 		return errors.New("File access was NOT denied")
 	}
 
@@ -175,7 +175,7 @@ func RevokedRecipientStore(u *User, u2 *User, fn1 string, fn2 string, un string,
 	}
 
 	// Files should NOT be equal
-	if !reflect.DeepEqual(ownerFile, recipFile) {
+	if reflect.DeepEqual(ownerFile, recipFile) {
 		return errors.New("File access was NOT denied")
 	}
 
@@ -645,6 +645,74 @@ func TestShare(t *testing.T) {
 	if !reflect.DeepEqual(v, v2) {
 		t.Error("Shared file is not the same", v, v2)
 		return
+	}
+
+}
+
+func TestReceiveDupFilename(t *testing.T) {
+	var magic_string string
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err, u)
+		return
+	}
+	u2, err2 := GetUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	u.StoreFile("dupFilname", []byte("Bob will already have a file of this name"))
+	u2.StoreFile("dupFilename", []byte("Bob's file with this name"))
+
+	magic_string, err = u.ShareFile("dupFilename", "bob")
+	err = u2.ReceiveFile("dupFilename", "alice", magic_string)
+	if err == nil {
+		t.Error("failed to catch error, bob already has file of this name")
+		return
+	}
+
+}
+
+func TestReceiveDupMagic(t *testing.T) {
+	var magic_string string
+
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err, u)
+		return
+	}
+	u2, err2 := GetUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	u.StoreFile("dupMagic", []byte("Alice will revoke Bob's access and then he will try to receive file with same magic string"))
+
+	magic_string, err = u.ShareFile("dupMagic", "bob")
+	err = u2.ReceiveFile("dupMagic", "alice", magic_string)
+	if err != nil {
+		t.Error("Bob did not receive file", err)
+		return
+	}
+
+	err = u.RevokeFile("dupMagic", "bob")
+	if err != nil {
+		t.Error("Revoke file failed", err)
+	}
+
+	err = u2.ReceiveFile("dupMagic", "alice", magic_string)
+
+	err = RevokedOwnerAppend(u, u2, "dupMagic", "dupMagic", "alice", "bob")
+	if err != nil {
+		t.Error("Revoke file failed to prevent Bob from seeing Alice's updates", err)
+	}
+
+	err = RevokedRecipientAppend(u, u2, "dupMagic", "dupMagic", "alice", "bob")
+	if err != nil {
+		t.Error("Revoke failed to prevent Bob from appending to Alice's file", err)
 	}
 
 }
@@ -1122,7 +1190,7 @@ func TestHashBasedDFunc(t *testing.T) {
 	// someUsefulThings()  //  Don't call someUsefulThings() in the autograder in case a student removes it
 	userlib.SetDebugStatus(false)
 
-	RandomOldSymmetricKey := userlib.RandomBytes(16) 
+	RandomOldSymmetricKey := userlib.RandomBytes(16)
 	newSymmetricKey, err := HKDF(RandomOldSymmetricKey)
 	if err != nil {
 		// t.Error says the test fails
