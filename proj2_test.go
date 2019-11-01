@@ -1113,3 +1113,25 @@ func TestRevokeChild(t *testing.T) {
 // Multi-user Integrity Test
 func TestRevokeMallory(t *testing.T) {
 }
+
+/*
+func TestHashBasedDFunc(t *testing.T) {
+
+	// You may want to turn it off someday
+	userlib.SetDebugStatus(true)
+	// someUsefulThings()  //  Don't call someUsefulThings() in the autograder in case a student removes it
+	userlib.SetDebugStatus(false)
+
+	RandomOldSymmetricKey := userlib.RandomBytes(16) 
+	newSymmetricKey, err := HKDF(RandomOldSymmetricKey)
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to get New Symmetric Key", err)
+		return
+	}
+	// t.Log() only produces output if you run with "go test -v"
+	t.Log("New Symmetric Key Derived", newSymmetricKey)
+	// If you want to comment the line above,
+	// write _ = u here to make the compiler happy
+
+}*/
