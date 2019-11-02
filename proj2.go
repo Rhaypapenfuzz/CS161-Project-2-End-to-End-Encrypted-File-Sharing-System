@@ -725,12 +725,12 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//look in owned files for file metaUUID using filename
 	metaUUID, found := userdata.OwnedFiles[filename]
 	if found == false { //	if metaUUID doesn’t exist abort
-		return err
+		return errors.New("No file found")
 	}
 	//get for encryptedFileMetaData in datastore
 	encryptedFileMetaData, ok := userlib.DatastoreGet(metaUUID)
 	if ok == false { //if the data can't be found.
-		return err //return err
+		return errors.New("No data found at this UUID") //return err
 	}
 	//CHECK INTEGRITY
 	//UnMarshal signedEncryptedFileMetaDataMarshalled
@@ -957,12 +957,12 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	//check if filename exist in OwnedFiles and get fileUUIDArrayUUID
 	metaUUID, found := userdata.OwnedFiles[filename]
 	if found == false { //	if filename doesn’t exist abort
-		return emptyString, err
+		return emptyString, errors.New("File does not exist")
 	}
 	//Marshalled(encryptedFileMetaData+signature) = DatastoreGet(metaUUID)
 	signedEncryptedFileMetaDataMarshalled, ok := userlib.DatastoreGet(metaUUID)
 	if ok == false { //if the file can't be found.
-		return emptyString, err //return empty data and nil
+		return emptyString, errors.New("No data found at this UUID") //return empty data and nil
 
 	}
 	//UnMarshal signedEncryptedFileMetaDataMarshalled
@@ -980,7 +980,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
 	dSVerifyKey, ok := userlib.KeystoreGet(metaDataKeyStr)
 	if ok == false { //if key doesn't exist in keystore
-		return emptyString, err //return empty data and nil
+		return emptyString, errors.New("No valid dsVerify Key found") //return empty data and nil
 	}
 	err = userlib.DSVerify(dSVerifyKey, encryptedFileMetaData, signature)
 	if err != nil { //if the user data was corrupted
@@ -990,7 +990,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	//decrypt encryptedFileMetaData with our symmetric key for this file
 	symmetricKey, found := userdata.FileMetaDataKeys[filename]
 	if found == false { //	if filename doesn’t exist abort
-		return emptyString, err
+		return emptyString, errors.New("No valid Symmetric Key found")
 	}
 	decryptedFileMetaDataMarshalled := userlib.SymDec(symmetricKey, encryptedFileMetaData)
 
@@ -1009,7 +1009,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	fileUUIDArrayUUID := decryptedFileMetaData.FileUUIDArrayUUID
 	signedEncryptedFileUUIDArrayMarshalledMarshalled, ok := userlib.DatastoreGet(fileUUIDArrayUUID)
 	if ok == false { //if the fileUUIDArray can't be found.
-		return emptyString, err //return empty data and nil
+		return emptyString, errors.New("No data found at this UUID") //return empty data and nil
 
 	}
 	//UnMarshal signedFileDataMarshalled
@@ -1027,7 +1027,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	fileKeyStr = fileKeyStr + "DSVerifyKey"
 	dSVerifyKey, ok = userlib.KeystoreGet(fileKeyStr)
 	if ok == false { //if the key can't be found.
-		return emptyString, err //return empty data and nil
+		return emptyString, errors.New("No valid dsVerify Key found") //return empty data and nil
 	}
 	err = userlib.DSVerify(dSVerifyKey, encryptedFileUUIDArrayMarshalled, signature)
 	if err != nil { //if the user data was corrupted
@@ -1061,7 +1061,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	//Encrypt magic string with recipient's public key
 	recipientPublicKey, ok := userlib.KeystoreGet(recipient + "PublicKey")
 	if ok == false { //if key doesn't exist in keystore
-		return emptyString, err //return empty data and nil
+		return emptyString, errors.New("No valid dsVerify Key found") //return empty data and nil
 	}
 
 	encryptedMagicString, err := userlib.PKEEnc(recipientPublicKey, magicStringBytes)
@@ -1106,7 +1106,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	signedEncryptedFileMetaDataMarshalled, _ = json.Marshal(newSignedEncryptedFileMetaData)
 	dSVerifyKey, ok = userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
 	if ok == false { //if key doesn't exist in keystore
-		return emptyString, err //return nil and error
+		return emptyString, errors.New("No valid dsVerify Key found") //return nil and error
 	}
 	metaDataKeyStr = metaUUID.String()
 	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
@@ -1267,12 +1267,12 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	//Look in OwnedFiles map and get metaDataUUID
 	metaUUID, found := userdata.OwnedFiles[filename]
 	if found == false { //if filename doesn’t exist return error
-		return err
+		return errors.New("No file found")
 	}
 	//get metaData, check integrity, decrypt it
 	signedEncryptedFileMetaDataMarshalled, ok := userlib.DatastoreGet(metaUUID)
 	if ok == false { //if the metaData can't be found.
-		return err //return error
+		return errors.New("No data found at this UUID") //return error
 	}
 	//CHECK INTEGRITY
 	//UnMarshal signedEncryptedFileMetaDataMarshalled
