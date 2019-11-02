@@ -941,6 +941,58 @@ func TestShareThreeUsers(t *testing.T) {
 	}
 }
 
+func TestMagicStringSwitch(t *testing.T) {
+	var magic_string1, magic_string2 string
+	var sharedFile []byte
+
+	// Create new file to share
+	sharedFile = []byte("Alice will make magic_strings for two different users and switch them around")
+
+	// Get users Alice
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	// Get user Bob
+	u2, err2 := GetUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to reload user", err2)
+		return
+	}
+
+	// Get user Yoshi
+	u3, err3 := GetUser("yoshi", "spottedegg")
+	if err3 != nil {
+		t.Error("Failed to reload user", u3)
+		return
+	}
+
+	// Alice stores new file
+	u.StoreFile("sharedFileMagicSwitch", sharedFile)
+	_, err = u.LoadFile("sharedFileMagicSwitch")
+	if err != nil {
+		t.Error("File upload or download failed", err)
+		return
+	}
+
+	magic_string1, err = u.ShareFile("sharedFileMagicSwitch", "bob")
+	magic_string2, err = u.ShareFile("sharedFileMagicSwitch", "yoshi")
+
+	err = u3.ReceiveFile("sharedFileMagicSwitch1", "alice", magic_string1)
+	if err == nil {
+		t.Error("Yoshi was able to receive bob's magic string")
+		return
+	}
+
+	err = u2.ReceiveFile("sharedFileMagicSwitch2", "alice", magic_string2)
+	if err == nil {
+		t.Error("Bob was able to receive yoshi's magic string")
+		return
+	}
+}
+
 func TestRevokeOwnerAppend(t *testing.T) {
 
 	u, err := GetUser("alice", "fubar")
