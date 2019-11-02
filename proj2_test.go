@@ -1085,10 +1085,10 @@ func TestRevokeThreeUsers(t *testing.T) {
 	// New file to share
 	sharedFile = []byte("Alice wants to share this file with her friends Bob and Yoshi")
 
-	// Get user Alice
+	// get user alice
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
-		t.Error("Failed to reload user", err)
+		t.Error("failed to reload user", err)
 		return
 	}
 
@@ -1195,8 +1195,23 @@ func TestRevokeThreeUsers(t *testing.T) {
 
 }
 
-// Test with children
+func TestRevokeBadFilename(t *testing.T) {
 
+	// get user alice
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("failed to reload user", err)
+		return
+	}
+
+	err = u.RevokeFile("fileDoesNotExist", "bob")
+	if err == nil {
+		t.Error("failed to recognize bad filename")
+		return
+	}
+}
+
+// Test with children
 func TestShareChild(t *testing.T) {
 	var sharedFile []byte
 
@@ -1316,106 +1331,3 @@ func TestRevokeChild(t *testing.T) {
 		return
 	}
 }
-
-func TestParentRevoke(t *testing.T) {
-
-	var sharedFile []byte
-
-	sharedFile = []byte("Alice creates a new file that she will send to Bob. Then Bob will send file Bob Jr. Then Bob will revoke the file from Bob Jr.")
-
-	// Get users Alice
-	u, err := GetUser("alice", "fubar")
-	if err != nil {
-		t.Error("Failed to reload user", err)
-		return
-	}
-
-	// Get user Bob
-	u2, err2 := GetUser("bob", "foobar")
-	if err2 != nil {
-		t.Error("Failed to reload user", err2)
-		return
-	}
-
-	// Initialize user Bob Jr.
-	u3, err3 := GetUser("bobJr", "babyfoobar")
-	if err3 != nil {
-		t.Error("Failed to initialize user", u3)
-		return
-	}
-
-	// Alice stores new file
-	u.StoreFile("sharedFilePR", sharedFile)
-
-	// Alice shares file with Bob
-	err = SetSharedFile(u, u2, "sharedFilePR", "sharedFilePR", "alice", "bob")
-	if err != nil {
-		t.Error("File sharing failed with Bob", err)
-		return
-	}
-
-	// Bob shared file with Bob Jr.
-	err = SetSharedFile(u2, u3, "sharedFilePR", "sharedFilePR", "bob", "bobJr")
-	if err != nil {
-		t.Error("File sharing failed with Bob Jr.", err)
-		return
-	}
-
-	// Alice revokes Bob's access, which revokes Bob Jr.'s access
-	u2.RevokeFile("sharedFilePR", "bobJr")
-
-	// Check that Bob Jr. cannot append
-	err = RevokedRecipientAppend(u2, u3, "sharedFilePR", "sharedFilePR", "bob", "bobJr")
-	if err != nil {
-		t.Error("Bob Jr. still has access to append Bob's file")
-		return
-	}
-
-	// Check that Bob Jr. cannot store
-	err = RevokedRecipientStore(u2, u3, "sharedFilePR", "sharedFilePR", "bob", "bobJr")
-	if err != nil {
-		t.Error("Bob Jr. still has access to append Bob's file")
-		return
-	}
-
-	// Check that Bob Jr. cannot see Bob's append
-	err = RevokedOwnerAppend(u2, u3, "sharedFilePR", "sharedFilePR", "bob", "bobJr")
-	if err != nil {
-		t.Error("Bob Jr. still has access to append Bob's file")
-		return
-	}
-
-	// Check that Bob Jr. cannot see Bob's store
-	err = RevokedOwnerStore(u2, u3, "sharedFilePR", "sharedFilePR", "bob", "bobJr")
-	if err != nil {
-		t.Error("Bob Jr. still has access to store to Bob's file")
-		return
-	}
-
-}
-
-// Multi-user Integrity Test
-func TestRevokeMallory(t *testing.T) {
-}
-
-/*
-func TestHashBasedDFunc(t *testing.T) {
-
-	// You may want to turn it off someday
-	userlib.SetDebugStatus(true)
-	// someUsefulThings()  //  Don't call someUsefulThings() in the autograder in case a student removes it
-	userlib.SetDebugStatus(false)
-
-	RandomOldSymmetricKey := userlib.RandomBytes(16)
-	newSymmetricKey, err := HKDF(RandomOldSymmetricKey)
-	if err != nil {
-		// t.Error says the test fails
-		t.Error("Failed to get New Symmetric Key", err)
-		return
-	}
-	// t.Log() only produces output if you run with "go test -v"
-	t.Log("New Symmetric Key Derived", newSymmetricKey)
-	// If you want to comment the line above,
-	// write _ = u here to make the compiler happy
-
-}*/
