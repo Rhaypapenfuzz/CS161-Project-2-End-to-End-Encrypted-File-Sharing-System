@@ -544,12 +544,12 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	//userdata.OwnedFiles = make(map[string]uuid.UUID)
 	metaUUID, found := userdata.OwnedFiles[filename]
 	if found == false { //	if filename doesn’t exist abort
-		return nil, err
+		return nil, errors.New("Can't be found")
 	}
 	//Marshalled(encryptedFileMetaData+signature) = DatastoreGet(metaUUID)
 	signedEncryptedFileMetaDataMarshalled, ok := userlib.DatastoreGet(metaUUID)
 	if ok == false { //if the file can't be found.
-		return nil, err //return empty data and nil
+		return nil, errors.New("No data found") //return empty data and nil
 	}
 
 	//UnMarshal signedEncryptedFileMetaDataMarshalled
@@ -567,7 +567,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	metaDataKeyStr = metaDataKeyStr + "DSVerifyKey"
 	dSVerifyKey, ok := userlib.KeystoreGet(metaDataKeyStr)
 	if ok == false { //if key doesn't exist in keystore
-		return nil, err //return empty data and nil
+		return nil, errors.New("Can't find valid dsVerify Key ") //return empty data and nil
 	}
 	err = userlib.DSVerify(dSVerifyKey, encryptedFileMetaData, signature)
 	if err != nil { //if the user data was corrupted
@@ -580,7 +580,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	//decrypt encryptedFileMetaData with our symmetric key for this file
 	symmetricKey, found := userdata.FileMetaDataKeys[filename]
 	if found == false { //	if filename doesn’t exist abort
-		return nil, err
+		return nil, errors.New("No SymmetricKey found to decrypt this Metadata")
 	}
 	decryptedFileMetaDataMarshalled := userlib.SymDec(symmetricKey, encryptedFileMetaData)
 
@@ -600,7 +600,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	fileUUIDArrayUUID := decryptedFileMetaData.FileUUIDArrayUUID
 	signedEncryptedFileUUIDArrayMarshalledMarshalled, ok := userlib.DatastoreGet(fileUUIDArrayUUID)
 	if ok == false { //if the fileUUIDArray can't be found.
-		return nil, err //return empty data and nil
+		return nil, errors.New("No data found") //return empty data and nil
 
 	}
 	//UnMarshal signedFileDataMarshalled
@@ -642,7 +642,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		//retrieve info from Datastore
 		signedFileDataMarshalled, ok := userlib.DatastoreGet(fileUUID)
 		if ok == false { //if the file can't be found.
-			return nil, err //return empty data and nil
+			return nil, errors.New("No data found") //return empty data and nil
 		}
 		//UnMarshal signedFileDataMarshalled
 		var signedFileData DSSignedData
@@ -658,7 +658,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		fileKeyStr = fileKeyStr + "DSVerifyKey"
 		dSVerifyKey, ok := userlib.KeystoreGet(fileKeyStr)
 		if ok == false { //if the key can't be found.
-			return nil, err //return empty data and nil
+			return nil, errors.New("No valid dsVerify key found") //return empty data and nil
 		}
 		err = userlib.DSVerify(dSVerifyKey, fileData, signature)
 		if err != nil { //if the user data was corrupted
