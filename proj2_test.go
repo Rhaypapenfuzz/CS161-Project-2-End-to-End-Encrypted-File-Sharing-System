@@ -937,6 +937,37 @@ func TestShareThreeUsers(t *testing.T) {
 	}
 }
 
+func TestMagicWrongSender(t *testing.T) {
+	var magic_string string
+
+	// Get users Alice
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+
+	// Get user Bob
+	u2, err2 := GetUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to reload user", err2)
+		return
+	}
+
+	// Create new file to share
+	sharedFile := []byte("Alice will make magic_strings but then bob receives with wrong senders name")
+
+	u.StoreFile("sharedFileWrongSenderName", sharedFile)
+	magic_string, err = u.ShareFile("sharedFileWrongSenderName", "bob")
+
+	err = u2.ReceiveFile("sharedFileWrongSender", "kirby", magic_string)
+	if err == nil {
+		t.Error("Failed to return error for wrong senders name")
+		return
+	}
+
+}
+
 func TestMagicStringSwitch(t *testing.T) {
 	var magic_string1, magic_string2 string
 	var sharedFile []byte
