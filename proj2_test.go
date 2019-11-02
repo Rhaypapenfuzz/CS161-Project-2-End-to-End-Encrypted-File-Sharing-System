@@ -1060,9 +1060,7 @@ func TestRevokeThreeUsers(t *testing.T) {
 
 	// Store new file
 	u.StoreFile("sharedFile3U2", sharedFile)
-	sharedFileBeforeRevoke, err := u.LoadFile("sharedFile3U2")
-	userlib.DebugMsg(string(sharedFile))
-	userlib.DebugMsg(string(sharedFileBeforeRevoke))
+	_, err = u.LoadFile("sharedFile3U2")
 	if err != nil {
 		t.Error("Failed to upload or download sharedFile3U2", err)
 	}
@@ -1071,12 +1069,14 @@ func TestRevokeThreeUsers(t *testing.T) {
 	err = SetSharedFile(u, u2, "sharedFile3U2", "sharedFile3U2", "alice", "bob")
 	if err != nil {
 		t.Error("Shared file failed", err)
+		return
 	}
 
 	// Share file with Yoshi
 	err = SetSharedFile(u, u3, "sharedFile3U2", "sharedFile3U2", "alice", "yoshi")
 	if err != nil {
 		t.Error("Shared file failed", err)
+		return
 	}
 
 	// Revoke Bob's access
@@ -1086,11 +1086,15 @@ func TestRevokeThreeUsers(t *testing.T) {
 		return
 	}
 
-	sharedFileAfterRevoke, err := u.LoadFile("sharedFile3U2")
-	userlib.DebugMsg(string(sharedFile))
-	userlib.DebugMsg(string(sharedFileAfterRevoke))
+	// Alice download's file after revoke to verify that they are the same
+	sharedFileAfterRevoke, err4 := u.LoadFile("sharedFile3U2")
+	if err4 != nil {
+		t.Error("Alice failed to download file after revoke")
+		return
+	}
+
 	if !reflect.DeepEqual(sharedFileAfterRevoke, sharedFile) {
-		t.Error("Alice failed to download file after revoke", err, sharedFileAfterRevoke, sharedFile)
+		t.Error("File after revoke is not the same", sharedFileAfterRevoke, sharedFile)
 		return
 	}
 
