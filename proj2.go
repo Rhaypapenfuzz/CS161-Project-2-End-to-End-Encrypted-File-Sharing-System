@@ -1281,6 +1281,9 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	dSSignKey := userdata.DSSignKey
 	dSFileUUIDArrayVerifyKey, _ := userlib.KeystoreGet(userdata.Username + "DSVerifyKey")
 
+	//delete old fileUUIDArrayUUID
+	userlib.DatastoreDelete(decryptedFileMetaData.FileUUIDArrayUUID)
+
 	fileUUIDArrayUUID := uuid.New()
 	decryptedFileMetaData.FileUUIDArrayUUID = fileUUIDArrayUUID
 	fileKeyStr = decryptedFileMetaData.FileUUIDArrayUUID.String()
@@ -1326,7 +1329,6 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	if err != nil {
 		return err
 	}
-	userlib.DatastoreDelete(fileUUIDArrayUUID)
 	return nil
 }
 
