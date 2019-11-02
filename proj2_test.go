@@ -324,15 +324,12 @@ func TestInit(t *testing.T) {
 
 func TestBadPassword(t *testing.T) {
 
-	u, err := GetUser("alice", "foobar")
+	_, err := GetUser("alice", "foobar")
 	if err == nil {
 		t.Error("Failed to return error for invalid password", err)
+		return
 	}
 
-	//	if strings.Compare("alice", u.username) == 0 {
-	//		t.Error("Failed to hide user data when inputing valid password")
-	//	}
-	t.Log("Returned error for bad password", u)
 }
 
 func TestStorage(t *testing.T) {
@@ -365,7 +362,6 @@ func TestBadLoadName(t *testing.T) {
 		t.Error("Failed to reload user", err)
 		return
 	}
-	t.Log("Loaded user", u)
 
 	v, err = u.LoadFile("fileone")
 	if err == nil {
